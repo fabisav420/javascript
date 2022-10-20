@@ -1,6 +1,7 @@
 // Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
 
 use crate::error::is_instance_of_error;
+use crate::error::to_v8_error;
 use crate::modules::get_asserted_module_type_from_assertions;
 use crate::modules::parse_import_assertions;
 use crate::modules::validate_import_assertions;
@@ -268,7 +269,7 @@ pub fn host_import_module_dynamically_callback<'s>(
   let resolver_handle = v8::Global::new(scope, resolver);
   {
     let state_rc = JsRuntime::state(scope);
-    let module_map_rc = JsRuntime::module_map(scope);
+    let module_map_rc = JsRealm::module_map_from_scope(scope);
 
     debug!(
       "dyn_import specifier {} referrer {} ",
@@ -305,7 +306,7 @@ pub extern "C" fn host_initialize_import_meta_object_callback(
 ) {
   // SAFETY: `CallbackScope` can be safely constructed from `Local<Context>`
   let scope = &mut unsafe { v8::CallbackScope::new(context) };
-  let module_map_rc = JsRuntime::module_map(scope);
+  let module_map_rc = JsRealm::module_map_from_scope(scope);
   let module_map = module_map_rc.borrow();
 
   let module_global = v8::Global::new(scope, module);
@@ -346,7 +347,7 @@ fn import_meta_resolve(
     let url_prop = args.data();
     url_prop.to_rust_string_lossy(scope)
   };
-  let module_map_rc = JsRuntime::module_map(scope);
+  let module_map_rc = JsRealm::module_map_from_scope(scope);
   let loader = {
     let module_map = module_map_rc.borrow();
     module_map.loader.clone()
@@ -426,10 +427,9 @@ pub extern "C" fn promise_reject_callback(message: v8::PromiseRejectMessage) {
   let scope = &mut unsafe { v8::CallbackScope::new(&message) };
 
   let realm_state_rc = JsRealm::state_from_scope(scope);
+  let mut realm_state = realm_state_rc.borrow_mut();
 
-  if let Some(js_promise_reject_cb) =
-    realm_state_rc.borrow().js_promise_reject_cb.clone()
-  {
+  if let Some(js_promise_reject_cb) = realm_state.js_promise_reject_cb.clone() {
     let tc_scope = &mut v8::TryCatch::new(scope);
     let undefined: v8::Local<v8::Value> = v8::undefined(tc_scope).into();
     let type_ = v8::Integer::new(tc_scope, message.get_event() as i32);
@@ -456,9 +456,9 @@ pub extern "C" fn promise_reject_callback(message: v8::PromiseRejectMessage) {
       };
 
     if has_unhandled_rejection_handler {
-      let state_rc = JsRuntime::state(tc_scope);
-      let mut state = state_rc.borrow_mut();
-      if let Some(pending_mod_evaluate) = state.pending_mod_evaluate.as_mut() {
+      if let Some(pending_mod_evaluate) =
+        realm_state.pending_mod_evaluate.as_mut()
+      {
         if !pending_mod_evaluate.has_evaluated {
           pending_mod_evaluate
             .handled_promise_rejections
@@ -554,7 +554,7 @@ pub fn module_resolve_callback<'s>(
   // SAFETY: `CallbackScope` can be safely constructed from `Local<Context>`
   let scope = &mut unsafe { v8::CallbackScope::new(context) };
 
-  let module_map_rc = JsRuntime::module_map(scope);
+  let module_map_rc = JsRealm::module_map_from_scope(scope);
   let module_map = module_map_rc.borrow();
 
   let referrer_global = v8::Global::new(scope, referrer);
@@ -593,4 +593,37 @@ pub fn throw_type_error(scope: &mut v8::HandleScope, message: impl AsRef<str>) {
   let message = v8::String::new(scope, message.as_ref()).unwrap();
   let exception = v8::Exception::type_error(scope, message);
   scope.throw_exception(exception);
+}
+
+pub fn host_create_shadow_realm_callback<'s>(
+  scope: &mut v8::HandleScope<'s>,
+) -> Option<v8::Local<'s, v8::Context>> {
+  let state = JsRuntime::state(scope);
+
+  // We use an IIFE so we can use the question mark operator.
+  let temp = (|| {
+    let realm = JsRuntime::create_realm_from_scope(scope)?;
+    let context = v8::Local::new(scope, realm.context());
+    if let Some(initialize_shadow_realm_fn) =
+      state.borrow().initialize_shadow_realm_fn
+    {
+      let mut scope = v8::ContextScope::new(scope, context);
+      initialize_shadow_realm_fn(&mut scope)?;
+      Ok(context)
+    } else {
+      Err(crate::error::generic_error("ShadowRealm is not supported"))
+    }
+  })();
+
+  match temp {
+    Ok(context) => Some(context),
+    Err(error) => {
+      let state_rc = JsRuntime::state(scope);
+      let op_state_rc = &state_rc.borrow().op_state;
+      let exception =
+        to_v8_error(scope, op_state_rc.borrow().get_error_class_fn, &error);
+      scope.throw_exception(exception);
+      None
+    }
+  }
 }

@@ -58,6 +58,7 @@ pub use crate::flags::v8_set_flags;
 pub use crate::inspector::InspectorMsg;
 pub use crate::inspector::InspectorMsgKind;
 pub use crate::inspector::InspectorSessionProxy;
+pub use crate::inspector::InspectorWaker;
 pub use crate::inspector::JsRuntimeInspector;
 pub use crate::inspector::LocalInspectorSession;
 pub use crate::io::BufMutView;

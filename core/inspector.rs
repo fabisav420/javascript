@@ -130,7 +130,9 @@ impl v8::inspector::V8InspectorClientImpl for JsRuntimeInspector {
   fn run_message_loop_on_pause(&mut self, context_group_id: i32) {
     assert_eq!(context_group_id, JsRuntimeInspector::CONTEXT_GROUP_ID);
     self.flags.borrow_mut().on_pause = true;
+    // eprintln!("poll_sessions_sync run_message_loop_on_pause");
     self.poll_sessions_sync();
+    // eprintln!("poll_sessions_sync run_message_loop_on_pause end");
     assert!(
       !self.flags.borrow().on_pause,
       "V8InspectorClientImpl::run_message_loop_on_pause returned before quit_message_loop_on_pause was called"
@@ -227,7 +229,9 @@ impl JsRuntimeInspector {
         aux_data_view,
       );
 
+    // eprintln!("poll_sessions_sync on start");
     self_.poll_sessions_sync();
+    // eprintln!("poll_sessions_sync on start end");
     drop(self_);
 
     self__
@@ -247,6 +251,10 @@ impl JsRuntimeInspector {
       .context_destroyed(context);
   }
 
+  pub fn waker(&self) -> Arc<InspectorWaker> {
+    self.waker.clone()
+  }
+
   pub fn has_active_sessions(&self) -> bool {
     self.sessions.borrow().has_active_sessions()
   }
@@ -258,10 +266,10 @@ impl JsRuntimeInspector {
   fn poll_sessions_sync(&self) {
     let (prev_poll_state, mut prev_task_waker) = self.waker.update(|w| {
       let prev_poll_state = replace(&mut w.poll_state, PollState::SyncPolling);
-      assert!(prev_poll_state != PollState::SyncPolling);
+      // assert!(prev_poll_state != PollState::SyncPolling);
 
       let prev_task_waker = w.task_waker.take();
-
+      w.inspector_ptr = Some(NonNull::from(self));
       (prev_poll_state, prev_task_waker)
     });
 
@@ -404,7 +412,9 @@ impl JsRuntimeInspector {
         }
         None => {
           self.flags.get_mut().waiting_for_session = true;
+          // eprintln!("poll_sessions_sync wait for session");
           self.poll_sessions_sync();
+          // eprintln!("poll_sessions_sync wait for session end");
         }
       };
     }
@@ -524,7 +534,7 @@ struct InspectorWakerInner {
 // SAFETY: unsafe trait must have unsafe implementation
 unsafe impl Send for InspectorWakerInner {}
 
-struct InspectorWaker(Mutex<InspectorWakerInner>);
+pub struct InspectorWaker(Mutex<InspectorWakerInner>);
 
 impl InspectorWaker {
   fn new(isolate_handle: v8::IsolateHandle) -> Arc<Self> {
@@ -550,7 +560,9 @@ extern "C" fn handle_interrupt(_isolate: &mut v8::Isolate, arg: *mut c_void) {
   // SAFETY: `InspectorWaker` is owned by `JsRuntimeInspector`, so the
   // pointer to the latter is valid as long as waker is alive.
   let inspector = unsafe { &*(arg as *mut JsRuntimeInspector) };
+  // eprintln!("poll_sessions_sync handle interrupt");
   inspector.poll_sessions_sync();
+  // eprintln!("poll_sessions_sync handle interrupt end");
 }
 
 impl task::ArcWake for InspectorWaker {
@@ -561,8 +573,10 @@ impl task::ArcWake for InspectorWaker {
       match w.poll_state {
         PollState::Idle | PollState::Polling => w.poll_state = PollState::Woken,
         PollState::Woken => {} // Even if already woken, schedule an interrupt.
+        // TODO(bartlomieju): drill down why this happens
+        // If we're already polling, schedule another interrupt.
+        PollState::SyncPolling => {}
         PollState::Dropped => return, // Don't do anything.
-        PollState::SyncPolling => panic!("wake() called while sync polling"),
       };
 
       // Wake the task, if any, that has polled the Inspector future last.

@@ -12,12 +12,14 @@ use deno_core::futures::pin_mut;
 use deno_core::futures::prelude::*;
 use deno_core::futures::select;
 use deno_core::futures::stream::StreamExt;
+use deno_core::futures::task;
 use deno_core::futures::task::Poll;
 use deno_core::serde_json;
 use deno_core::serde_json::json;
 use deno_core::serde_json::Value;
 use deno_core::InspectorMsg;
 use deno_core::InspectorSessionProxy;
+use deno_core::InspectorWaker;
 use deno_core::JsRuntime;
 use deno_websocket::tokio_tungstenite::tungstenite;
 use deno_websocket::tokio_tungstenite::WebSocketStream;
@@ -27,6 +29,7 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::process;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::thread;
 use uuid::Uuid;
 
@@ -73,12 +76,14 @@ impl InspectorServer {
     let mut inspector = inspector_rc.borrow_mut();
     let session_sender = inspector.get_session_sender();
     let deregister_rx = inspector.add_deregister_handler();
+    let waker = inspector.waker();
     let info = InspectorInfo::new(
       self.host,
       session_sender,
       deregister_rx,
       module_url,
       should_break_on_first_statement,
+      waker,
     );
     self.register_inspector_tx.unbounded_send(info).unwrap();
   }
@@ -132,7 +137,7 @@ fn handle_ws_request(
   }
 
   // run in a block to not hold borrow to `inspector_map` for too long
-  let new_session_tx = {
+  let (new_session_tx, waker) = {
     let inspector_map = inspector_map_rc.borrow();
     let maybe_inspector_info = inspector_map.get(&maybe_uuid.unwrap());
 
@@ -143,7 +148,7 @@ fn handle_ws_request(
     }
 
     let info = maybe_inspector_info.unwrap();
-    info.new_session_tx.clone()
+    (info.new_session_tx.clone(), info.waker.clone())
   };
 
   let resp = tungstenite::handshake::server::create_response(&req)
@@ -187,7 +192,7 @@ fn handle_ws_request(
 
     eprintln!("Debugger session started.");
     let _ = new_session_tx.unbounded_send(inspector_session_proxy);
-    pump_websocket_messages(websocket, inbound_tx, outbound_rx).await;
+    pump_websocket_messages(websocket, inbound_tx, outbound_rx, waker).await;
   });
 
   Ok(resp)
@@ -331,6 +336,7 @@ async fn pump_websocket_messages(
   websocket: WebSocketStream<hyper::upgrade::Upgraded>,
   inbound_tx: UnboundedSender<String>,
   outbound_rx: UnboundedReceiver<InspectorMsg>,
+  waker: Arc<InspectorWaker>,
 ) {
   let (websocket_tx, websocket_rx) = websocket.split();
 
@@ -347,6 +353,7 @@ async fn pump_websocket_messages(
         // Messages that cannot be converted to strings are ignored.
         if let Ok(msg_text) = msg.into_text() {
           let _ = inbound_tx.unbounded_send(msg_text);
+          task::ArcWake::wake_by_ref(&waker);
         }
       })
       .try_collect::<()>()
@@ -371,6 +378,7 @@ pub struct InspectorInfo {
   pub deregister_rx: oneshot::Receiver<()>,
   pub url: String,
   pub should_break_on_first_statement: bool,
+  pub waker: Arc<InspectorWaker>,
 }
 
 impl InspectorInfo {
@@ -380,6 +388,7 @@ impl InspectorInfo {
     deregister_rx: oneshot::Receiver<()>,
     url: String,
     should_break_on_first_statement: bool,
+    waker: Arc<InspectorWaker>,
   ) -> Self {
     Self {
       host,
@@ -389,6 +398,7 @@ impl InspectorInfo {
       deregister_rx,
       url,
       should_break_on_first_statement,
+      waker,
     }
   }
 

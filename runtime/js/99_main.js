@@ -1,10 +1,6 @@
 // Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 "use strict";
 
-// Removes the `__proto__` for security reasons.
-// https://tc39.es/ecma262/#sec-get-object.prototype.__proto__
-delete Object.prototype.__proto__;
-
 // Remove Intl.v8BreakIterator because it is a non-standard API.
 delete Intl.v8BreakIterator;
 
@@ -26,6 +22,8 @@ delete Intl.v8BreakIterator;
     ObjectDefineProperty,
     ObjectDefineProperties,
     ObjectFreeze,
+    ObjectGetPrototypeOf,
+    ObjectPrototype,
     ObjectPrototypeIsPrototypeOf,
     ObjectSetPrototypeOf,
     PromiseResolve,
@@ -73,6 +71,23 @@ delete Intl.v8BreakIterator;
     setUserAgent,
     setLanguage,
   } = window.__bootstrap.globalScope;
+
+  // Disables setting `__proto__` and emits a warning instead, for security reasons.
+  // https://tc39.es/ecma262/#sec-get-object.prototype.__proto__
+  ObjectDefineProperty(ObjectPrototype, "__proto__", {
+    configurable: true,
+    enumerable: false,
+    get() {
+      return ObjectGetPrototypeOf(this);
+    },
+    set(_) {
+      console.warn(
+        new Error(
+          "Prototype access via __proto__ attempted; __proto__ is not implemented in Deno due to security reasons. Use Object.setPrototypeOf instead.",
+        ),
+      );
+    },
+  });
 
   let windowIsClosing = false;
 

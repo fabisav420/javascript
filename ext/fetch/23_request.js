@@ -434,9 +434,18 @@
       const inputOrInitBody = initBody ?? inputBody;
 
       // 39.
-      let finalBody = inputOrInitBody;
+      if (inputOrInitBody !== null && inputOrInitBody.source === null) {
+        if (
+          initBody !== null && (init.duplex === null || init.duplex !== "half")
+        ) {
+          throw new TypeError(
+            "Request with ReadableStream init body must have its duplex set to 'half'",
+          );
+        }
+      }
 
       // 40.
+      let finalBody = inputOrInitBody;
       if (initBody === null && inputBody !== null) {
         if (input[_body] && input[_body].unusable()) {
           throw new TypeError("Input request's body is unusable.");
@@ -570,6 +579,12 @@
       "manual",
     ],
   );
+  webidl.converters["RequestDuplex"] = webidl.createEnumConverter(
+    "RequestDuplex",
+    [
+      "half",
+    ],
+  );
   webidl.converters["RequestInit"] = webidl.createDictionaryConverter(
     "RequestInit",
     [
@@ -589,6 +604,7 @@
         ),
       },
       { key: "client", converter: webidl.converters.any },
+      { key: "duplex", converter: webidl.converters["RequestDuplex"] },
     ],
   );
 

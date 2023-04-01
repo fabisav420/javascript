@@ -332,7 +332,7 @@ class Blob {
   stream() {
     webidl.assertBranded(this, BlobPrototype);
     const partIterator = toIterator(this[_parts]);
-    const stream = new ReadableStream({
+    return new ReadableStream({
       type: "bytes",
       /** @param {ReadableByteStreamController} controller */
       async pull(controller) {
@@ -340,14 +340,29 @@ class Blob {
           const { value, done } = await AsyncGeneratorPrototypeNext(
             partIterator,
           );
-          if (done) return controller.close();
-          if (value.byteLength > 0) {
-            return controller.enqueue(value);
+          if (controller.byobRequest) {
+            if (done) {
+              controller.close();
+              controller.byobRequest.respond(0);
+              return;
+            }
+            if (value.byteLength > 0) {
+              const buf = new Uint8Array(controller.byobRequest.view);
+              buf.set(value);
+              controller.byobRequest.respondWithNewView(buf);
+              return;
+            }
+          } else {
+            if (done) {
+              return controller.close();
+            }
+            if (value.byteLength > 0) {
+              return controller.enqueue(value);
+            }
           }
         }
       },
     });
-    return stream;
   }
 
   /**

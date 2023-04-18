@@ -343,6 +343,7 @@ pub async fn create_custom_worker(
     maybe_inspector_server,
     should_break_on_first_statement: ps.options.inspect_brk().is_some(),
     should_wait_for_inspector_session: ps.options.inspect_wait().is_some(),
+    standalone: false,
     module_loader,
     npm_resolver: Some(Rc::new(ps.npm_resolver.as_require_npm_resolver())),
     get_error_class_fn: Some(&errors::get_error_class_name),
@@ -477,6 +478,7 @@ fn create_web_worker_callback(
       compiled_wasm_module_store: Some(ps.compiled_wasm_module_store.clone()),
       stdio: stdio.clone(),
       cache_storage_dir,
+      standalone: false,
     };
 
     WebWorker::bootstrap_from_options(
@@ -518,6 +520,7 @@ mod tests {
       maybe_inspector_server: None,
       should_break_on_first_statement: false,
       should_wait_for_inspector_session: false,
+      standalone: false,
       module_loader: Rc::new(FsModuleLoader),
       npm_resolver: None,
       get_error_class_fn: None,

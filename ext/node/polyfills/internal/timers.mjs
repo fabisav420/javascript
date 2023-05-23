@@ -9,6 +9,8 @@ import {
   setTimeout as setTimeout_,
   clearTimeout as clearTimeout_,
   setInterval as setInterval_,
+  unrefTimer,
+  refTimer,
 } from "ext:deno_web/02_timers.js";
 
 // Timeout values > TIMEOUT_MAX are set to 1.
@@ -39,7 +41,7 @@ Timeout.prototype[createTimer] = function () {
     ? setInterval_(cb, this._idleTimeout, ...this._timerArgs)
     : setTimeout_(cb, this._idleTimeout, ...this._timerArgs);
   if (!this[kRefed]) {
-    Deno.unrefTimer(id);
+    unrefTimer(id);
   }
   return id;
 };
@@ -64,7 +66,7 @@ Timeout.prototype.refresh = function () {
 Timeout.prototype.unref = function () {
   if (this[kRefed]) {
     this[kRefed] = false;
-    Deno.unrefTimer(this[kTimerId]);
+    unrefTimer(this[kTimerId]);
   }
   return this;
 };
@@ -72,7 +74,7 @@ Timeout.prototype.unref = function () {
 Timeout.prototype.ref = function () {
   if (!this[kRefed]) {
     this[kRefed] = true;
-    Deno.refTimer(this[kTimerId]);
+    refTimer(this[kTimerId]);
   }
   return this;
 };

@@ -40,6 +40,9 @@ import {
 import { kEmptyObject } from "ext:deno_node/internal/util.mjs";
 import { getValidatedPath } from "ext:deno_node/internal/fs/utils.mjs";
 import process from "ext:deno_node/process.ts";
+import { errors } from "ext:runtime/01_errors.js";
+import * as denoOs from "ext:runtime/30_os.js";
+import * as denoProcess from "ext:runtime/40_process.js";
 
 export function mapValues<T, O>(
   record: Readonly<Record<string, T>>,
@@ -173,7 +176,7 @@ export class ChildProcess extends EventEmitter {
 
     const stringEnv = mapValues(env, (value) => value.toString());
     try {
-      this.#process = new Deno.Command(cmd, {
+      this.#process = new denoProcess.Command(cmd, {
         args: cmdArgs,
         cwd,
         env: stringEnv,
@@ -271,7 +274,7 @@ export class ChildProcess extends EventEmitter {
       this.#process.kill(denoSignal);
     } catch (err) {
       const alreadyClosed = err instanceof TypeError ||
-        err instanceof Deno.errors.PermissionDenied;
+        err instanceof errors.PermissionDenied;
       if (!alreadyClosed) {
         throw err;
       }
@@ -448,11 +451,11 @@ function copyProcessEnvToEnv(
   optionEnv?: Record<string, string | number | boolean>,
 ) {
   if (
-    Deno.env.get(name) &&
+    denoOs.env.get(name) &&
     (!optionEnv ||
       !ObjectHasOwn(optionEnv, name))
   ) {
-    env[name] = Deno.env.get(name);
+    env[name] = denoOs.env.get(name);
   }
 }
 
@@ -583,7 +586,7 @@ export function normalizeSpawnArguments(
       if (typeof options.shell === "string") {
         file = options.shell;
       } else {
-        file = Deno.env.get("comspec") || "cmd.exe";
+        file = denoOs.env.get("comspec") || "cmd.exe";
       }
       // '/d /s /c' is used only for cmd.exe.
       if (/^(?:.*\\)?cmd(?:\.exe)?$/i.exec(file) !== null) {
@@ -609,7 +612,7 @@ export function normalizeSpawnArguments(
     ArrayPrototypeUnshift(args, file);
   }
 
-  const env = options.env || Deno.env.toObject();
+  const env = options.env || denoOs.env.toObject();
   const envPairs: string[][] = [];
 
   // process.env.NODE_V8_COVERAGE always propagates, making it possible to
@@ -697,7 +700,7 @@ function buildCommand(
   args: string[],
   shell: string | boolean,
 ): [string, string[]] {
-  if (file === Deno.execPath()) {
+  if (file === denoOs.execPath()) {
     // The user is trying to spawn another Deno process as Node.js.
     args = toDenoArgs(args);
   }
@@ -710,7 +713,7 @@ function buildCommand(
       if (typeof shell === "string") {
         file = shell;
       } else {
-        file = Deno.env.get("comspec") || "cmd.exe";
+        file = denoOs.env.get("comspec") || "cmd.exe";
       }
       // '/d /s /c' is used only for cmd.exe.
       if (/^(?:.*\\)?cmd(?:\.exe)?$/i.test(file)) {
@@ -807,7 +810,7 @@ export function spawnSync(
   options: SpawnSyncOptions,
 ): SpawnSyncResult {
   const {
-    env = Deno.env.toObject(),
+    env = denoOs.env.toObject(),
     stdio = ["pipe", "pipe", "pipe"],
     shell = false,
     cwd,
@@ -822,7 +825,7 @@ export function spawnSync(
 
   const result: SpawnSyncResult = {};
   try {
-    const output = new Deno.Command(command, {
+    const output = new denoProcess.Command(command, {
       args,
       cwd,
       env,
@@ -855,7 +858,7 @@ export function spawnSync(
     result.stderr = stderr;
     result.output = [output.signal, stdout, stderr];
   } catch (err) {
-    if (err instanceof Deno.errors.NotFound) {
+    if (err instanceof errors.NotFound) {
       result.error = _createSpawnSyncError("ENOENT", command, args);
     }
   }

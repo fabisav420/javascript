@@ -9,6 +9,9 @@ import { stat, Stats } from "ext:deno_node/_fs/_fs_stat.ts";
 import { Stats as StatsClass } from "ext:deno_node/internal/fs/utils.mjs";
 import { Buffer } from "ext:deno_node/buffer.ts";
 import { delay } from "ext:deno_node/_util/async.ts";
+import { errors } from "ext:runtime/01_errors.js";
+import { clearTimeout, setTimeout } from "ext:deno_web/02_timers.js";
+import { watchFs } from "ext:runtime/40_fs_events.js";
 
 const statPromisified = promisify(stat);
 const statAsync = async (filename: string): Promise<Stats | null> => {
@@ -116,7 +119,7 @@ export function watch(
   // error in test case in compat test case
   // (parallel/test-fs-watch.js, parallel/test-fs-watchfile.js)
   const timer = setTimeout(() => {
-    iterator = Deno.watchFs(watchPath, {
+    iterator = (watchFs as unknown as typeof Deno.watchFs)(watchPath, {
       recursive: options?.recursive || false,
     });
 
@@ -137,7 +140,7 @@ export function watch(
     try {
       iterator?.close();
     } catch (e) {
-      if (e instanceof Deno.errors.BadResource) {
+      if (e instanceof errors.BadResource) {
         // already closed
         return;
       }

@@ -787,6 +787,7 @@ for (let i = 0; i < 10; i++) {
     op_read_sync: readSync,
     op_write_sync: writeSync,
     op_shutdown: shutdown,
+    op_read_detaching: readDetaching,
   } = generateAsyncOpHandler(
     "op_close",
     "op_try_close",
@@ -797,6 +798,7 @@ for (let i = 0; i < 10; i++) {
     "op_read_sync",
     "op_write_sync",
     "op_shutdown",
+    "op_read_detaching",
   );
 
   // Extra Deno.core.* exports
@@ -825,6 +827,7 @@ for (let i = 0; i < 10; i++) {
     tryClose,
     read,
     readAll,
+    readDetaching,
     write,
     writeAll,
     readSync,

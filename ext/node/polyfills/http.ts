@@ -745,8 +745,8 @@ class ClientRequest extends OutgoingMessage {
       path = "/" + path;
     }
     return `${protocol}//${auth ? `${auth}@` : ""}${host}${
-      port === 80 ? "" : `:${port}`
-    }${path}${search}${hash}`;
+      (port === 80 || opts.host) ? "" : `:${port}`
+    }${path}`;
   }
 
   setTimeout(msecs: number, callback?: () => void) {

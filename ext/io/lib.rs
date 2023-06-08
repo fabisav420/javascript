@@ -289,10 +289,10 @@ impl Resource for ChildStderrResource {
 #[derive(Clone, Copy)]
 enum StdFileResourceKind {
   File,
-  // For stdout and stderr, we sometimes instead use std::io::stdout() directly,
-  // because we get some Windows specific functionality for free by using Rust
-  // std's wrappers. So we take a bit of a complexity hit in order to not
-  // have to duplicate the functionality in Rust's std/src/sys/windows/stdio.rs
+  // We sometimes use std::io::{stdin, stdout, stderr}() directly because we
+  // get some Windows specific functionality for free by using Rust std's
+  // wrappers. So we take a bit of a complexity hit in order to not have to
+  // duplicate the functionality in Rust's std/src/sys/windows/stdio.rs
   Stdin,
   Stdout,
   Stderr,
@@ -410,8 +410,10 @@ impl crate::fs::File for StdFileResourceInner {
 
   fn read_sync(self: Rc<Self>, buf: &mut [u8]) -> FsResult<usize> {
     match self.kind {
-      StdFileResourceKind::File | StdFileResourceKind::Stdin => {
-        self.with_sync(|file| Ok(file.read(buf)?))
+      StdFileResourceKind::File => self.with_sync(|file| Ok(file.read(buf)?)),
+      StdFileResourceKind::Stdin => {
+        // bypass the file and use std::io::stdin()
+        Ok(std::io::stdin().read(buf)?)
       }
       StdFileResourceKind::Stdout | StdFileResourceKind::Stderr => {
         Err(FsError::NotSupported)
@@ -521,9 +523,15 @@ impl crate::fs::File for StdFileResourceInner {
 
   fn read_all_sync(self: Rc<Self>) -> FsResult<Vec<u8>> {
     match self.kind {
-      StdFileResourceKind::File | StdFileResourceKind::Stdin => {
+      StdFileResourceKind::File => {
         let mut buf = Vec::new();
         self.with_sync(|file| Ok(file.read_to_end(&mut buf)?))?;
+        Ok(buf)
+      }
+      StdFileResourceKind::Stdin => {
+        // bypass the file and use std::io::stdin()
+        let mut buf = Vec::new();
+        std::io::stdin().read_to_end(&mut buf)?;
         Ok(buf)
       }
       StdFileResourceKind::Stdout | StdFileResourceKind::Stderr => {
@@ -533,7 +541,7 @@ impl crate::fs::File for StdFileResourceInner {
   }
   async fn read_all_async(self: Rc<Self>) -> FsResult<Vec<u8>> {
     match self.kind {
-      StdFileResourceKind::File | StdFileResourceKind::Stdin => {
+      StdFileResourceKind::File => {
         self
           .with_inner_blocking_task(|file| {
             let mut buf = Vec::new();
@@ -541,6 +549,15 @@ impl crate::fs::File for StdFileResourceInner {
             Ok(buf)
           })
           .await
+      }
+      StdFileResourceKind::Stdin => {
+        // bypass the file and use std::io::stdin()
+        tokio::task::spawn_blocking(|| {
+          let mut buf = Vec::new();
+          std::io::stdin().read_to_end(&mut buf)?;
+          Ok(buf)
+        })
+        .await?
       }
       StdFileResourceKind::Stdout | StdFileResourceKind::Stderr => {
         Err(FsError::NotSupported)

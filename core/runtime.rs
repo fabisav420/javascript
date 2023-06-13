@@ -1328,7 +1328,7 @@ impl JsRuntime {
 
     if has_inspector {
       // We poll the inspector first.
-      let _ = self.inspector().borrow().poll_sessions(Some(cx)).unwrap();
+      let _ = self.inspector().borrow_mut().poll_unpin(cx);
     }
 
     self.pump_v8_message_loop()?;

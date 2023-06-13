@@ -1409,3 +1409,109 @@ async fn inspector_wait() {
   assert!(temp_dir.path().join("hello.txt").exists());
   tester.child.kill().unwrap();
 }
+
+// https://github.com/denoland/deno/issues/11570
+#[tokio::test]
+async fn inspector_repl_debugger_statement() {
+  let child = util::deno_cmd()
+    .arg("repl")
+    .arg(inspect_flag_with_unique_port("--inspect"))
+    .stdin(std::process::Stdio::piped())
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::piped())
+    .spawn()
+    .unwrap();
+
+  let mut tester = InspectorTester::create(child, ignore_script_parsed).await;
+
+  let stdin = tester.child.stdin.take().unwrap();
+
+  tester.assert_stderr_for_inspect();
+  assert_starts_with!(&tester.stdout_line(), "Deno");
+  assert_eq!(
+    &tester.stdout_line(),
+    "exit using ctrl+d, ctrl+c, or close()"
+  );
+
+  tester
+    .send_many(&[
+      json!({"id":1,"method":"Runtime.enable"}),
+      json!({"id":2,"method":"Debugger.enable"}),
+    ])
+    .await;
+  tester.assert_received_messages(
+      &[
+        r#"{"id":1,"result":{}}"#,
+        r#"{"id":2,"result":{"debuggerId":"#,
+      ],
+      &[
+        r#"{"method":"Runtime.executionContextCreated","params":{"context":{"id":1,"#,
+      ],
+    )
+    .await;
+
+  tester
+    .send(json!({
+      "id":3,
+      "method":"Runtime.evaluate",
+      "params":{
+        "expression":"debugger",
+        "objectGroup":"console",
+        "includeCommandLineAPI":true,
+        "silent":false,
+        "contextId":1,
+        "returnByValue":true,
+        "generatePreview":true,
+        "userGesture":true,
+        "awaitPromise":false,
+        "replMode":true
+      }
+    }))
+    .await;
+  tester
+    .assert_received_messages(&[], &[r#"{"method":"Debugger.paused""#])
+    .await;
+  tester
+    .send(json!({
+      "id":4,
+      "method":"Debugger.resume",
+      "params":{"terminateOnResume":false}
+    }))
+    .await;
+  tester
+    .assert_received_messages(
+      &[
+        r#"{"id":4,"result":{}}"#,
+        r#"{"id":3,"result":{"result":{"type":"undefined"}}}"#,
+      ],
+      &[r#"{"method":"Debugger.resumed""#],
+    )
+    .await;
+  tester
+    .send(json!({
+      "id":5,
+      "method":"Runtime.evaluate",
+      "params":{
+        "expression":"1",
+        "objectGroup":"console",
+        "includeCommandLineAPI":true,
+        "silent":false,
+        "contextId":1,
+        "returnByValue":true,
+        "generatePreview":true,
+        "userGesture":true,
+        "awaitPromise":false,
+        "replMode":true
+      }
+    }))
+    .await;
+  tester.assert_received_messages(
+      &[
+        r#"{"id":5,"result":{"result":{"type":"number","value":1,"description":"1"}}}"#,
+      ],
+      &[
+      ],
+    ).await;
+  drop(stdin);
+  tester.child.wait().unwrap();
+}

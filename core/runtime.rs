@@ -1263,8 +1263,10 @@ impl JsRuntime {
       match promise.state() {
         v8::PromiseState::Pending => match state {
           Poll::Ready(Ok(_)) => {
-            let msg = "Promise resolution is still pending but the event loop has already resolved.";
-            Poll::Ready(Err(generic_error(msg)))
+            let resolver = v8::PromiseResolver::new(&mut scope).unwrap();
+            let undefined = v8::undefined(&mut scope);
+            resolver.reject(&mut scope, undefined.into());
+            return Poll::Pending;
           }
           Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
           Poll::Pending => Poll::Pending,

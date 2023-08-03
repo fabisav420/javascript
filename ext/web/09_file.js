@@ -31,13 +31,10 @@ const {
   MathMax,
   MathMin,
   ObjectPrototypeIsPrototypeOf,
-  RegExpPrototypeTest,
   // TODO(lucacasonato): add SharedArrayBuffer to primordials
   // SharedArrayBufferPrototype
   SafeFinalizationRegistry,
-  SafeRegExp,
   StringPrototypeCharAt,
-  StringPrototypeToLowerCase,
   StringPrototypeSlice,
   Symbol,
   SymbolFor,
@@ -50,6 +47,7 @@ const {
   Uint8Array,
 } = primordials;
 import { createFilteredInspectProxy } from "ext:deno_console/01_console.js";
+import * as mimesniff from "ext:deno_web/01_mimesniff.js";
 
 // TODO(lucacasonato): this needs to not be hardcoded and instead depend on
 // host os.
@@ -171,18 +169,13 @@ function processBlobParts(parts, endings) {
   return { parts: processedParts, size };
 }
 
-const NORMALIZE_PATTERN = new SafeRegExp(/^[\x20-\x7E]*$/);
-
 /**
  * @param {string} str
  * @returns {string}
  */
 function normalizeType(str) {
-  let normalizedType = str;
-  if (!RegExpPrototypeTest(NORMALIZE_PATTERN, str)) {
-    normalizedType = "";
-  }
-  return StringPrototypeToLowerCase(normalizedType);
+  const mime = mimesniff.parseMimeType(str);
+  return mime !== null ? mimesniff.serializeMimeType(mime) : "";
 }
 
 /**

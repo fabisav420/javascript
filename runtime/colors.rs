@@ -27,12 +27,75 @@ static NO_COLOR: Lazy<bool> =
 
 static IS_TTY: Lazy<bool> = Lazy::new(|| atty::is(atty::Stream::Stdout));
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum TTYColorLevel {
+  None,
+  Basic,
+  Ansi256,
+  TrueColor,
+}
+
+static SUPPORT_LEVEL: Lazy<TTYColorLevel> = Lazy::new(|| {
+  if *NO_COLOR {
+    return TTYColorLevel::None;
+  }
+
+  fn get_os_env_var(var_name: &str) -> Option<String> {
+    let var = std::env::var_os(var_name);
+
+    var.and_then(|s| {
+      let maybe_str = s.to_str();
+      maybe_str.map(|s| s.to_string())
+    })
+  }
+
+  detect_color_support(get_os_env_var)
+});
+
+fn detect_color_support(
+  get_env_var: impl Fn(&str) -> Option<String>,
+) -> TTYColorLevel {
+  // Windows supports 24bit True Colors since Windows 10 #14931,
+  // see https://devblogs.microsoft.com/commandline/24-bit-color-in-the-windows-console/
+  if cfg!(target_os = "windows") {
+    return TTYColorLevel::TrueColor;
+  }
+
+  if let Some(color_term) = get_env_var("COLORTERM") {
+    if color_term == "truecolor" || color_term == "24bit" {
+      return TTYColorLevel::TrueColor;
+    }
+  }
+
+  if let Some(term) = get_env_var("TERM") {
+    if term.ends_with("256") || term.ends_with("256color") {
+      return TTYColorLevel::Ansi256;
+    }
+
+    // CI systems commonly set TERM=dumb although they support
+    // full colors. They usually do their own mapping.
+    if get_env_var("CI").is_some() {
+      return TTYColorLevel::TrueColor;
+    }
+
+    if term != "dumb" {
+      return TTYColorLevel::Basic;
+    }
+  }
+
+  TTYColorLevel::None
+}
+
 pub fn is_tty() -> bool {
   *IS_TTY
 }
 
 pub fn use_color() -> bool {
   !(*NO_COLOR)
+}
+
+pub fn use_color_support_level() -> TTYColorLevel {
+  *SUPPORT_LEVEL
 }
 
 #[cfg(windows)]
@@ -154,4 +217,72 @@ pub fn white_bold_on_red<S: AsRef<str>>(s: S) -> impl fmt::Display {
     .set_bg(Some(Red))
     .set_fg(Some(White));
   style(s, style_spec)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::collections::HashMap;
+
+  #[cfg(not(windows))]
+  #[test]
+  fn supports_true_color() {
+    let vars = HashMap::from([("COLORTERM", "truecolor")]);
+    assert_eq!(
+      detect_color_support(|name| vars.get(name).map(|s| s.to_string())),
+      TTYColorLevel::TrueColor
+    );
+
+    let vars = HashMap::from([("COLORTERM", "24bit")]);
+    assert_eq!(
+      detect_color_support(|name| vars.get(name).map(|s| s.to_string())),
+      TTYColorLevel::TrueColor
+    );
+  }
+
+  #[cfg(not(windows))]
+  #[test]
+  fn supports_ansi_256() {
+    let vars = HashMap::from([("TERM", "xterm-256")]);
+    assert_eq!(
+      detect_color_support(|name| vars.get(name).map(|s| s.to_string())),
+      TTYColorLevel::Ansi256
+    );
+
+    let vars = HashMap::from([("TERM", "xterm-256color")]);
+    assert_eq!(
+      detect_color_support(|name| vars.get(name).map(|s| s.to_string())),
+      TTYColorLevel::Ansi256
+    );
+  }
+
+  #[cfg(not(windows))]
+  #[test]
+  fn supports_ci_color() {
+    let vars = HashMap::from([("CI", "1"), ("TERM", "dumb")]);
+    assert_eq!(
+      detect_color_support(|name| vars.get(name).map(|s| s.to_string())),
+      TTYColorLevel::TrueColor
+    );
+  }
+
+  #[cfg(not(windows))]
+  #[test]
+  fn supports_basic_ansi() {
+    let vars = HashMap::from([("TERM", "xterm")]);
+    assert_eq!(
+      detect_color_support(|name| vars.get(name).map(|s| s.to_string())),
+      TTYColorLevel::Basic
+    );
+  }
+
+  #[cfg(not(windows))]
+  #[test]
+  fn supports_none() {
+    let vars = HashMap::from([("TERM", "dumb")]);
+    assert_eq!(
+      detect_color_support(|name| vars.get(name).map(|s| s.to_string())),
+      TTYColorLevel::None
+    );
+  }
 }

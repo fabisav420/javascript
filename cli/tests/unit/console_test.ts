@@ -57,8 +57,12 @@ function parseCssColor(colorString: string): [number, number, number] | null {
 }
 
 /** ANSI-fy the CSS, replace "\x1b" with "_". */
-function cssToAnsiEsc(css: Css, prevCss: Css | null = null): string {
-  return cssToAnsi_(css, prevCss).replaceAll("\x1b", "_");
+function cssToAnsiEsc(
+  css: Css,
+  prevCss: Css | null = null,
+  supportLevel = 3,
+): string {
+  return cssToAnsi_(css, prevCss, supportLevel).replaceAll("\x1b", "_");
 }
 
 // test cases from web-platform-tests
@@ -1288,6 +1292,17 @@ Deno.test(function consoleCssToAnsi() {
       { ...DEFAULT_CSS, color: [203, 204, 205], fontStyle: "italic" },
     ),
     "_[38;2;0;0;0m_[1m_[23m",
+  );
+});
+
+Deno.test(function consoleCssToAnsi256Lower() {
+  assertEquals(
+    cssToAnsiEsc(
+      { ...DEFAULT_CSS, color: [203, 204, 205], fontWeight: "bold" },
+      null,
+      2,
+    ),
+    "_[38;5;188m_[1m",
   );
 });
 

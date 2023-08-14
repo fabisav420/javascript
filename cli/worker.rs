@@ -437,6 +437,7 @@ impl CliMainWorkerFactory {
         cpu_count: std::thread::available_parallelism()
           .map(|p| p.get())
           .unwrap_or(1),
+        color_support_level: colors::use_color_support_level(),
         log_level: shared.options.log_level,
         enable_testing_features: shared.options.enable_testing_features,
         locale: deno_core::v8::icu::get_language_tag(),
@@ -630,6 +631,7 @@ fn create_web_worker_callback(
         locale: deno_core::v8::icu::get_language_tag(),
         location: Some(args.main_module.clone()),
         no_color: !colors::use_color(),
+        color_support_level: colors::use_color_support_level(),
         is_tty: colors::is_tty(),
         runtime_version: version::deno().to_string(),
         ts_version: version::TYPESCRIPT.to_string(),

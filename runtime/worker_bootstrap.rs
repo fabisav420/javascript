@@ -47,6 +47,7 @@ pub struct BootstrapOptions {
   pub location: Option<ModuleSpecifier>,
   /// Sets `Deno.noColor` in JS runtime.
   pub no_color: bool,
+  pub color_support_level: colors::TTYColorLevel,
   pub is_tty: bool,
   /// Sets `Deno.version.deno` in JS runtime.
   pub runtime_version: String,
@@ -71,6 +72,7 @@ impl Default for BootstrapOptions {
       user_agent,
       cpu_count,
       no_color: !colors::use_color(),
+      color_support_level: colors::use_color_support_level(),
       is_tty: colors::is_tty(),
       enable_testing_features: Default::default(),
       log_level: Default::default(),
@@ -207,6 +209,19 @@ impl BootstrapOptions {
     {
       let val = v8::Boolean::new(scope, self.enable_testing_features);
       array.set_index(scope, 15, val.into());
+    }
+
+    {
+      let val = v8::Integer::new(
+        scope,
+        match self.color_support_level {
+          colors::TTYColorLevel::TrueColor => 3,
+          colors::TTYColorLevel::Ansi256 => 2,
+          colors::TTYColorLevel::Basic => 1,
+          colors::TTYColorLevel::None => 0,
+        },
+      );
+      array.set_index(scope, 16, val.into());
     }
 
     array

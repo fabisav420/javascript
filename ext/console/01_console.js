@@ -137,6 +137,12 @@ const {
   isNaN,
 } = primordials;
 
+function assert(cond, msg = "Assertion failed.") {
+  if (!cond) {
+    throw new AssertionError(msg);
+  }
+}
+
 let noColor = false;
 
 function setNoColor(value) {
@@ -147,10 +153,17 @@ function getNoColor() {
   return noColor;
 }
 
-function assert(cond, msg = "Assertion failed.") {
-  if (!cond) {
-    throw new AssertionError(msg);
-  }
+/**
+ * The level of color the tty supports.
+ * 0 = None
+ * 1 = Basic Ansi
+ * 2 = Ansi 256
+ * 3 = 24bit True Color
+ */
+let colorSupportLevel = 0;
+
+function setColorSupportLevel(level) {
+  colorSupportLevel = level;
 }
 
 // Don't use 'blue' not visible on cmd.exe
@@ -2930,6 +2943,60 @@ function colorEquals(color1, color2) {
     color1?.[2] == color2?.[2];
 }
 
+const COLOR_SUPPORT_256 = 2;
+const COLOR_SUPPORT_TRUE_COLOR = 3;
+
+const ANSI_FOREGROUND = "38";
+const ANSI_BACKGROUND = "48";
+const ANSI_UNDERLINE = "58";
+
+/**
+ * Convert an RGB color to the color level that the terminal we're
+ * running in supports. We'll try to match requested color as close
+ * as possible to the colors we have available in case it lies outside
+ * the supported spectrum.
+ * @param {number} r red
+ * @param {number} g green
+ * @param {number} b blue
+ * @param {"38" | "48"} kind foreground or background color
+ * @param {0 | 1 | 2 | 3} supportLevel amount of colors supported
+ * @returns {string}
+ */
+function rgbToAnsi(r, g, b, kind, supportLevel) {
+  if (supportLevel === COLOR_SUPPORT_TRUE_COLOR) {
+    return `\x1b[${kind};2;${r};${g};${b}m`;
+  } else if (supportLevel === COLOR_SUPPORT_256) {
+    // Lower colors into 256 color space
+    // Taken from https://github.com/Qix-/color-convert/blob/3f0e0d4e92e235796ccb17f6e85c72094a651f49/conversions.js
+    // which is MIT licensed and copyright by Heather Arthur and Josh Junon
+
+    // We use the extended greyscale palette here, with the exception of
+    // black and white. Normal palette only has 4 greyscale shades.
+    if (r === g && g === b) {
+      if (r < 8) {
+        return `\x1b[${kind};5;16`;
+      }
+
+      if (r > 248) {
+        return `\x1b[${kind};5;231`;
+      }
+
+      const value = MathRound(((r - 8) / 247) * 24) + 232;
+      return `\x1b[${kind};5;${value}`;
+    }
+
+    const value = 16 +
+      (36 * MathRound(r / 255 * 5)) +
+      (6 * MathRound(g / 255 * 5)) +
+      MathRound(b / 255 * 5);
+
+    return `\x1b[${kind};5;${value}m`;
+  } else {
+    // No colors if terminal is dumb
+    return "";
+  }
+}
+
 function cssToAnsi(css, prevCss = null) {
   prevCss = prevCss ?? getDefaultCss();
   let ansi = "";
@@ -2955,12 +3022,12 @@ function cssToAnsi(css, prevCss = null) {
     } else {
       if (ArrayIsArray(css.backgroundColor)) {
         const { 0: r, 1: g, 2: b } = css.backgroundColor;
-        ansi += `\x1b[48;2;${r};${g};${b}m`;
+        ansi += rgbToAnsi(r, g, b, ANSI_BACKGROUND, colorSupportLevel);
       } else {
         const parsed = parseCssColor(css.backgroundColor);
         if (parsed !== null) {
           const { 0: r, 1: g, 2: b } = parsed;
-          ansi += `\x1b[48;2;${r};${g};${b}m`;
+          ansi += rgbToAnsi(r, g, b, ANSI_BACKGROUND, colorSupportLevel);
         } else {
           ansi += "\x1b[49m";
         }
@@ -2989,12 +3056,12 @@ function cssToAnsi(css, prevCss = null) {
     } else {
       if (ArrayIsArray(css.color)) {
         const { 0: r, 1: g, 2: b } = css.color;
-        ansi += `\x1b[38;2;${r};${g};${b}m`;
+        ansi += rgbToAnsi(r, g, b, ANSI_FOREGROUND, colorSupportLevel);
       } else {
         const parsed = parseCssColor(css.color);
         if (parsed !== null) {
           const { 0: r, 1: g, 2: b } = parsed;
-          ansi += `\x1b[38;2;${r};${g};${b}m`;
+          ansi += rgbToAnsi(r, g, b, ANSI_FOREGROUND, colorSupportLevel);
         } else {
           ansi += "\x1b[39m";
         }
@@ -3018,7 +3085,7 @@ function cssToAnsi(css, prevCss = null) {
   if (!colorEquals(css.textDecorationColor, prevCss.textDecorationColor)) {
     if (css.textDecorationColor != null) {
       const { 0: r, 1: g, 2: b } = css.textDecorationColor;
-      ansi += `\x1b[58;2;${r};${g};${b}m`;
+      ansi += rgbToAnsi(r, g, b, ANSI_UNDERLINE, colorSupportLevel);
     } else {
       ansi += "\x1b[59m";
     }
@@ -3641,6 +3708,7 @@ export {
   inspect,
   inspectArgs,
   quoteString,
+  setColorSupportLevel,
   setNoColor,
   styles,
   wrapConsole,

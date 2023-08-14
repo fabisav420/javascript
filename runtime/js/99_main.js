@@ -45,14 +45,7 @@ import * as location from "ext:deno_web/12_location.js";
 import * as version from "ext:runtime/01_version.ts";
 import * as os from "ext:runtime/30_os.js";
 import * as timers from "ext:deno_web/02_timers.js";
-import {
-  getDefaultInspectOptions,
-  getNoColor,
-  inspectArgs,
-  quoteString,
-  setNoColor,
-  wrapConsole,
-} from "ext:deno_console/01_console.js";
+import * as consoleMod from "ext:deno_console/01_console.js";
 import * as performance from "ext:deno_web/15_performance.js";
 import * as url from "ext:deno_url/00_url.js";
 import * as fetch from "ext:deno_fetch/26_fetch.js";
@@ -224,12 +217,16 @@ function formatException(error) {
     return null;
   } else if (typeof error == "string") {
     return `Uncaught ${
-      inspectArgs([quoteString(error, getDefaultInspectOptions())], {
-        colors: !getNoColor(),
+      consoleMod.inspectArgs([
+        consoleMod.quoteString(error, consoleMod.getDefaultInspectOptions()),
+      ], {
+        colors: !consoleMod.getNoColor(),
       })
     }`;
   } else {
-    return `Uncaught ${inspectArgs([error], { colors: !getNoColor() })}`;
+    return `Uncaught ${
+      consoleMod.inspectArgs([error], { colors: !consoleMod.getNoColor() })
+    }`;
   }
 }
 
@@ -307,6 +304,7 @@ function runtimeStart(
   target,
   logLevel,
   noColor,
+  colorSupportLevel,
   isTty,
   source,
 ) {
@@ -322,7 +320,8 @@ function runtimeStart(
   );
   core.setBuildInfo(target);
   util.setLogLevel(logLevel, source);
-  setNoColor(noColor || !isTty);
+  consoleMod.setNoColor(noColor || !isTty);
+  consoleMod.setColorSupportLevel(colorSupportLevel);
   // deno-lint-ignore prefer-primordials
   Error.prepareStackTrace = core.prepareStackTrace;
 }
@@ -456,6 +455,7 @@ function bootstrapMainRuntime(runtimeOptions) {
     13: userAgent,
     14: inspectFlag,
     // 15: enableTestingFeaturesFlag
+    16: colorSupportLevel,
   } = runtimeOptions;
 
   performance.setTimeOrigin(DateNow());
@@ -490,7 +490,7 @@ function bootstrapMainRuntime(runtimeOptions) {
   if (inspectFlag) {
     const consoleFromV8 = core.console;
     const consoleFromDeno = globalThis.console;
-    wrapConsole(consoleFromDeno, consoleFromV8);
+    consoleMod.wrapConsole(consoleFromDeno, consoleFromV8);
   }
 
   event.setEventTargetData(globalThis);
@@ -511,6 +511,7 @@ function bootstrapMainRuntime(runtimeOptions) {
     target,
     logLevel,
     noColor,
+    colorSupportLevel,
     isTty,
   );
 
@@ -570,6 +571,7 @@ function bootstrapWorkerRuntime(
     // 13: userAgent,
     // 14: inspectFlag,
     15: enableTestingFeaturesFlag,
+    16: colorSupportLevel,
   } = runtimeOptions;
 
   performance.setTimeOrigin(DateNow());
@@ -602,7 +604,7 @@ function bootstrapWorkerRuntime(
   ObjectSetPrototypeOf(globalThis, DedicatedWorkerGlobalScope.prototype);
 
   const consoleFromDeno = globalThis.console;
-  wrapConsole(consoleFromDeno, consoleFromV8);
+  consoleMod.wrapConsole(consoleFromDeno, consoleFromV8);
 
   event.setEventTargetData(globalThis);
   event.saveGlobalThisReference(globalThis);
@@ -626,6 +628,7 @@ function bootstrapWorkerRuntime(
     target,
     logLevel,
     noColor,
+    colorSupportLevel,
     isTty,
     internalName ?? name,
   );

@@ -22,6 +22,25 @@ macro_rules! check_env {
   };
 }
 
+// Macros that use try_catch:
+//  - GET_RETURN_STATUS
+//  - RETURN_STATUS_IF_FALSE_WITH_PREAMBLE
+//  - CHECK_STATUS_IF_FALSE_WITH_PREAMBLE
+
+#[macro_export]
+macro_rules! napi_preamble {
+  ($env: expr) => {
+    $crate::check_env!($env);
+    // TODO(bartlomieju): Node also checks if "env.can_call_into_js()"
+    $crate::return_status_if_false!(
+      $env,
+      unsafe { &mut *$env }.last_exception.is_none(),
+      napi_pending_exception
+    );
+    $crate::napi::js_native_api::napi_clear_last_error($env);
+  };
+}
+
 #[inline]
 unsafe fn napi_value_unchecked(val: napi_value) -> v8::Local<v8::Value> {
   transmute::<napi_value, v8::Local<v8::Value>>(val)
@@ -120,12 +139,13 @@ macro_rules! check_arg_option {
   };
 }
 
-fn napi_clear_last_error(env: *mut Env) {
+fn napi_clear_last_error(env: *mut Env) -> napi_status {
   let env = unsafe { &mut *env };
   env.last_error.error_code = napi_ok;
   env.last_error.engine_error_code = 0;
   env.last_error.engine_reserved = std::ptr::null_mut();
   env.last_error.error_message = std::ptr::null_mut();
+  napi_ok
 }
 
 pub(crate) fn napi_set_last_error(
@@ -1674,20 +1694,6 @@ fn napi_get_all_property_names(_env: *mut Env) -> napi_status {
 }
 
 #[napi_sym::napi_sym]
-fn napi_get_and_clear_last_exception(
-  env: *mut Env,
-  result: *mut napi_value,
-) -> napi_status {
-  check_env!(env);
-  let env = unsafe { &mut *env };
-  // TODO: just return undefined for now we don't cache
-  // exceptions in env.
-  let value: v8::Local<v8::Value> = v8::undefined(&mut env.scope()).into();
-  *result = value.into();
-  napi_ok
-}
-
-#[napi_sym::napi_sym]
 fn napi_get_array_length(
   _env: *mut Env,
   value: napi_value,
@@ -2295,10 +2301,33 @@ fn napi_is_error(
 
 #[napi_sym::napi_sym]
 fn napi_is_exception_pending(env: *mut Env, result: *mut bool) -> napi_status {
-  let mut _env = &mut *(env as *mut Env);
-  // TODO
-  *result = false;
-  napi_ok
+  check_env!(env);
+  check_arg!(env, result);
+  let env = unsafe { &mut *env };
+  *result = env.last_exception.is_some();
+  napi_clear_last_error(env)
+}
+
+#[napi_sym::napi_sym]
+fn napi_get_and_clear_last_exception(
+  env: *mut Env,
+  result: *mut napi_value,
+) -> napi_status {
+  check_env!(env);
+  check_arg!(env, result);
+
+  {
+    let env = unsafe { &mut *env };
+    let value: v8::Local<v8::Value> =
+      if let Some(last_exception) = env.last_exception.take() {
+        v8::Local::new(&mut env.scope(), last_exception).into()
+      } else {
+        v8::undefined(&mut env.scope()).into()
+      };
+    *result = value.into();
+  }
+
+  napi_clear_last_error(env)
 }
 
 #[napi_sym::napi_sym]
@@ -2331,16 +2360,37 @@ fn napi_new_instance(
   argv: *const napi_value,
   result: *mut napi_value,
 ) -> napi_status {
-  check_env!(env);
+  napi_preamble!(env);
+  check_arg_option!(env, constructor);
+  if argc > 0 {
+    check_arg!(env, argv);
+  }
+  check_arg!(env, result);
+  let env_ = env.clone();
   let env = unsafe { &mut *env };
+  let scope = &mut env.scope();
+  let tc_scope = v8::TryCatch::new(scope);
+
   let constructor = napi_value_unchecked(constructor);
-  let constructor = v8::Local::<v8::Function>::try_from(constructor).unwrap();
+  let Ok(constructor) = v8::Local::<v8::Function>::try_from(constructor) else {
+    return napi_invalid_arg
+  };
+
   let args: &[v8::Local<v8::Value>] =
     transmute(std::slice::from_raw_parts(argv, argc));
-  let inst = constructor.new_instance(&mut env.scope(), args).unwrap();
+
+  let Some(inst) = constructor.new_instance(&mut env.scope(), args) else {
+    return napi_set_last_error(env_, napi_pending_exception, 0, ptr::null_mut());
+  };
+
   let value: v8::Local<v8::Value> = inst.into();
   *result = value.into();
-  napi_ok
+
+  if tc_scope.has_caught() {
+    napi_set_last_error(env_, napi_pending_exception, 0, ptr::null_mut())
+  } else {
+    napi_ok
+  }
 }
 
 #[napi_sym::napi_sym]
@@ -2601,11 +2651,12 @@ fn napi_strict_equals(
 
 #[napi_sym::napi_sym]
 fn napi_throw(env: *mut Env, error: napi_value) -> napi_status {
-  check_env!(env);
+  napi_preamble!(env);
+  check_arg_option!(env, error);
   let env = unsafe { &mut *env };
   let error = napi_value_unchecked(error);
   env.scope().throw_exception(error);
-  napi_ok
+  napi_clear_last_error(env)
 }
 
 #[napi_sym::napi_sym]

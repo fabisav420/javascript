@@ -101,6 +101,7 @@ log.workspace = true
 netif = "0.1.6"
 notify.workspace = true
 once_cell.workspace = true
+percent-encoding = "=2.3.0"
 regex.workspace = true
 ring.workspace = true
 serde.workspace = true

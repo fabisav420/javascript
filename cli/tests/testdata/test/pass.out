@@ -48,6 +48,12 @@ test\v ...
 console.error
 ----- output end -----
 test\v ... ok ([WILDCARD])
+----- output end -----
+denoTestLocation => /foo/bar/fizz.ts:100:200
+error: boom!
+  throw new Error();
+        ^
+    at [WILDCARD]/test/fail.ts:29:9
 
-ok | 16 passed | 0 failed ([WILDCARD])
+ok | 17 passed | 0 failed ([WILDCARD])
 

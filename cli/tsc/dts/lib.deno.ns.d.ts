@@ -5848,6 +5848,17 @@ declare namespace Deno {
     remoteAddr: Deno.NetAddr;
   }
 
+  /**
+   * Response data for {@linkcode ServeHandler}.
+   *
+   * @category HTTP Server
+   */
+  export interface ServeHandlerResponse {
+    body?: string | Uint8Array | ReadableStream<Uint8Array>;
+    headers?: Headers | HeadersInit;
+    status?: number;
+  }
+
   /** A handler for HTTP requests. Consumes a request and returns a response.
    *
    * If a handler throws, the server calling the handler will assume the impact
@@ -5859,7 +5870,10 @@ declare namespace Deno {
   export type ServeHandler = (
     request: Request,
     info: ServeHandlerInfo,
-  ) => Response | Promise<Response>;
+  ) =>
+    | Response
+    | ServeHandlerResponse
+    | Promise<Response | ServeHandlerResponse>;
 
   /** Options which can be set when calling {@linkcode Deno.serve}.
    *

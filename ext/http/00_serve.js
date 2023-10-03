@@ -13,6 +13,7 @@ import {
   toInnerResponse,
 } from "ext:deno_fetch/23_response.js";
 import { fromInnerRequest, toInnerRequest } from "ext:deno_fetch/23_request.js";
+import { headerListFromHeaders } from "ext:deno_fetch/20_headers.js";
 import { AbortController } from "ext:deno_web/03_abort_signal.js";
 import {
   _eventLoop,
@@ -37,10 +38,14 @@ import {
 import { listen, TcpConn } from "ext:deno_net/01_net.js";
 import { listenTls } from "ext:deno_net/02_tls.js";
 const {
+  ArrayIsArray,
   ArrayPrototypePush,
   Error,
+  NumberIsInteger,
   ObjectPrototypeIsPrototypeOf,
+  ObjectEntries,
   PromisePrototypeCatch,
+  RangeError,
   Symbol,
   SymbolFor,
   TypeError,
@@ -381,9 +386,7 @@ function fastSyncResponseOrStream(req, respBody, status) {
     return;
   }
 
-  const stream = respBody.streamOrStatic;
-  const body = stream.body;
-
+  const body = respBody.streamOrStatic?.body ?? respBody;
   if (ObjectPrototypeIsPrototypeOf(Uint8ArrayPrototype, body)) {
     op_http_set_response_body_bytes(req, body, status);
     return;
@@ -394,6 +397,7 @@ function fastSyncResponseOrStream(req, respBody, status) {
     return;
   }
 
+  const stream = respBody?.streamOrStatic ?? respBody;
   // At this point in the response it needs to be a stream
   if (!ObjectPrototypeIsPrototypeOf(ReadableStreamPrototype, stream)) {
     throw TypeError("invalid response");
@@ -458,7 +462,6 @@ function mapToCallback(context, callback, onError) {
       }
     }
 
-    const inner = toInnerResponse(response);
     if (innerRequest?.[_upgraded]) {
       // We're done here as the connection has been upgraded during the callback and no longer requires servicing.
       if (response !== UPGRADE_RESPONSE_SENTINEL) {
@@ -477,8 +480,40 @@ function mapToCallback(context, callback, onError) {
       return;
     }
 
-    const status = inner.status;
-    const headers = inner.headerList;
+    let status = 200;
+    let headers;
+    let body;
+
+    const inner = toInnerResponse(response);
+    if (inner) {
+      status = inner.status;
+      headers = inner.headerList;
+      body = inner.body;
+    } else {
+      // response is a ServeHandlerResponse
+      body = response.body;
+
+      if (response.status) {
+        status = response.status;
+        if (!NumberIsInteger(status)) {
+          throw new TypeError(`Invalid status (${status})`);
+        }
+
+        if ((status < 200 || status > 599) && status != 101) {
+          throw new RangeError(
+            `The status provided (${status}) is not equal to 101 and outside the range [200, 599].`,
+          );
+        }
+      }
+
+      if (response.headers) {
+        headers = ArrayIsArray(response.headers)
+          ? response.headers
+          : (headerListFromHeaders(response.headers) ??
+            ObjectEntries(response.headers));
+      }
+    }
+
     if (headers && headers.length > 0) {
       if (headers.length == 1) {
         op_http_set_response_header(req, headers[0][0], headers[0][1]);
@@ -487,7 +522,7 @@ function mapToCallback(context, callback, onError) {
       }
     }
 
-    fastSyncResponseOrStream(req, inner.body, status);
+    fastSyncResponseOrStream(req, body, status);
     innerRequest?.close();
   };
 }

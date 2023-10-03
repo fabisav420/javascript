@@ -3715,3 +3715,194 @@ async function curlRequestWithStdErr(args: string[]) {
   assert(success);
   return [new TextDecoder().decode(stdout), new TextDecoder().decode(stderr)];
 }
+
+Deno.test(
+  { permissions: { net: true } },
+  async function testServeHandlerResponse() {
+    const body = "hello world";
+    const bodyU8 = new TextEncoder().encode(body);
+
+    const listeningPromise = deferred();
+
+    type ResponseItem = {
+      expect: {
+        status: number;
+        body: string;
+        headers?: [string, string][];
+      };
+      response: {
+        body?: string | Uint8Array | ReadableStream;
+        status?: number;
+        headers?: Headers | HeadersInit;
+      };
+    };
+    const responses: ResponseItem[] = [
+      {
+        expect: {
+          status: 204,
+          body: "",
+        },
+        response: { status: 204 },
+      },
+
+      {
+        expect: {
+          status: 200,
+          body,
+        },
+        response: { body },
+      },
+
+      {
+        expect: {
+          status: 200,
+          body,
+          headers: [["content-type", "text/plain"], ["x-deno", "foo"]],
+        },
+        response: {
+          body,
+          headers: { "content-type": "text/plain", "x-deno": "foo" },
+        },
+      },
+
+      {
+        expect: {
+          status: 201,
+          body,
+        },
+        response: { body, status: 201 },
+      },
+
+      {
+        expect: {
+          status: 200,
+          body,
+        },
+        response: { body: bodyU8 },
+      },
+
+      {
+        expect: {
+          status: 201,
+          body,
+        },
+        response: { body: bodyU8, status: 201 },
+      },
+
+      {
+        expect: {
+          status: 201,
+          body,
+          headers: [["content-type", "text/plain"], ["x-deno", "foo"]],
+        },
+        response: {
+          body: bodyU8,
+          status: 201,
+          headers: new Headers([["content-type", "text/plain"], [
+            "x-deno",
+            "foo",
+          ]]),
+        },
+      },
+
+      {
+        expect: {
+          status: 201,
+          body,
+        },
+
+        response: {
+          body: new ReadableStream({
+            start(controller) {
+              controller.enqueue(bodyU8);
+              controller.close();
+            },
+          }),
+          status: 201,
+        },
+      },
+
+      {
+        expect: {
+          status: 400,
+          body: "a",
+          headers: [["content-type", "text/plain"]],
+        },
+
+        response: {
+          body: new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array([97]));
+              controller.close();
+            },
+          }),
+          status: 400,
+          headers: [["content-type", "text/plain"]],
+        },
+      },
+    ];
+
+    let expect: ResponseItem["expect"];
+    let response: ResponseItem["response"];
+
+    const ac = new AbortController();
+    const server = Deno.serve({
+      onListen: ({ port }: { port: number }) => listeningPromise.resolve(port),
+      signal: ac.signal,
+    }, () => {
+      ({ expect, response } = responses.shift()!);
+      return response;
+    });
+
+    const port = await listeningPromise;
+    const responsesLength = responses.length;
+
+    for (let i = 0; i < responsesLength; i++) {
+      const res = await fetch(`http://localhost:${port}/`);
+      assertEquals(res.status, expect!.status);
+      assertEquals(await res.text(), expect!.body);
+
+      if (expect!.headers) {
+        for (const [key, value] of expect!.headers) {
+          assertEquals(res.headers.get(key), value);
+        }
+      }
+    }
+
+    assertEquals(responses.length, 0);
+
+    ac.abort();
+    await server.finished;
+  },
+);
+
+Deno.test(
+  { permissions: { net: true } },
+  async function testServeHandlerResponseInvalidStatus() {
+    const invalidStatus = [50, "foo", {}, 600, 100, "200"];
+
+    for (const status of invalidStatus) {
+      const listeningPromise = deferred();
+      const ac = new AbortController();
+      const server = Deno.serve(
+        {
+          onListen: ({ port }: { port: number }) =>
+            listeningPromise.resolve(port),
+          signal: ac.signal,
+        }, // @ts-ignore - testing invalid status
+        () => ({ status }),
+      );
+
+      const port = await listeningPromise;
+
+      const fetchPromise = fetch(`http://localhost:${port}/`)
+        .catch((e) => e.message);
+
+      await server.finished;
+      assertMatch(
+        await fetchPromise,
+        /connection closed before message completed/,
+      );
+    }
+  },
+);

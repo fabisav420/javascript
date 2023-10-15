@@ -845,6 +845,75 @@ impl CliOptions {
     }
   }
 
+  pub fn resolve_using_import_map_or_default_resolve(
+    &self,
+    specifier: &str,
+    maybe_import_map: &Option<Arc<ImportMap>>,
+  ) -> Result<ModuleSpecifier, AnyError> {
+    'try_import_map: {
+      if let Some(import_map) = maybe_import_map {
+        if let Ok(mapped_specifier) =
+          import_map.resolve(specifier, import_map.base_url())
+        {
+          // Check if we took "try_url_like_specifier" from import map - in such
+          // case we don't want to use resolution provided by the import map,
+          // but resolve using CWD.
+          if specifier.starts_with('/')
+            || specifier.starts_with("./")
+            || specifier.starts_with("../")
+          {
+            if let Ok(specifier) = import_map.base_url().join(specifier) {
+              if mapped_specifier == specifier {
+                break 'try_import_map;
+              }
+            }
+          }
+
+          if Url::parse(specifier).is_ok() {
+            break 'try_import_map;
+          }
+
+          return Ok(mapped_specifier);
+        }
+      }
+    }
+
+    resolve_url_or_path(specifier, self.initial_cwd()).map_err(AnyError::from)
+  }
+
+  pub fn resolve_main_module_with_import_map(
+    &self,
+    maybe_import_map: &Option<Arc<ImportMap>>,
+  ) -> Result<ModuleSpecifier, AnyError> {
+    match &self.flags.subcommand {
+      DenoSubcommand::Info(info_flags) => {
+        assert!(info_flags.file.is_some());
+        self.resolve_using_import_map_or_default_resolve(
+          info_flags.file.as_ref().unwrap(),
+          maybe_import_map,
+        )
+      }
+      DenoSubcommand::Run(run_flags) => {
+        if run_flags.is_stdin() {
+          std::env::current_dir()
+            .context("Unable to get CWD")
+            .and_then(|cwd| {
+              resolve_url_or_path("./$deno$stdin.ts", &cwd)
+                .map_err(AnyError::from)
+            })
+        } else if NpmPackageReqReference::from_str(&run_flags.script).is_ok() {
+          ModuleSpecifier::parse(&run_flags.script).map_err(AnyError::from)
+        } else {
+          self.resolve_using_import_map_or_default_resolve(
+            &run_flags.script,
+            maybe_import_map,
+          )
+        }
+      }
+      _ => panic!("Unexpected subcommand {:#?}", self.flags.subcommand),
+    }
+  }
+
   pub fn resolve_file_header_overrides(
     &self,
   ) -> HashMap<ModuleSpecifier, HashMap<String, String>> {

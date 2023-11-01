@@ -87,10 +87,18 @@ function processUrlList(urlList, urlListProcessed) {
  * @param {string | () => string} url
  * @param {() => [string, string][]} headerList
  * @param {typeof __window.bootstrap.fetchBody.InnerBody} body
- * @param {boolean} maybeBlob
+ * @param {boolean} [maybeBlob]
+ * @param {number} [httpVersion]
  * @returns {InnerRequest}
  */
-function newInnerRequest(method, url, headerList, body, maybeBlob) {
+function newInnerRequest(
+  method,
+  url,
+  headerList,
+  body,
+  maybeBlob,
+  httpVersion,
+) {
   let blobUrlEntry = null;
   if (
     maybeBlob &&
@@ -149,6 +157,7 @@ function newInnerRequest(method, url, headerList, body, maybeBlob) {
       }
       return this.urlListProcessed[currentIndex];
     },
+    httpVersion,
   };
 }
 
@@ -200,6 +209,7 @@ function cloneInnerRequest(request, skipBody = false) {
       }
       return this.urlListProcessed[currentIndex];
     },
+    httpVersion: request.httpVersion,
   };
 }
 

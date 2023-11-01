@@ -25,6 +25,7 @@ import {
   _eventLoop,
   _idleTimeoutDuration,
   _idleTimeoutTimeout,
+  _ownsConn,
   _protocol,
   _readyState,
   _rid,
@@ -122,7 +123,12 @@ class HttpConn {
       return null;
     }
 
-    const { 0: streamRid, 1: method, 2: url } = nextRequest;
+    const {
+      0: streamRid,
+      1: method,
+      2: url,
+      3: httpVersion,
+    } = nextRequest;
     SetPrototypeAdd(this.managedResources, streamRid);
 
     /** @type {ReadableStream<Uint8Array> | undefined} */
@@ -140,6 +146,7 @@ class HttpConn {
       () => ops.op_http_headers(streamRid),
       body !== null ? new InnerBody(body) : null,
       false,
+      httpVersion,
     );
     innerRequest[streamRid] = streamRid;
     const abortController = new AbortController();
@@ -375,7 +382,9 @@ function createRespondWith(
         ws[_rid] = wsRid;
         ws[_protocol] = resp.headers.get("sec-websocket-protocol");
 
-        httpConn.close();
+        if (ws[_ownsConn]) {
+          httpConn.close();
+        }
 
         ws[_readyState] = WebSocket.OPEN;
         ws[_role] = SERVER;
@@ -406,8 +415,17 @@ const _ws = Symbol("[[associated_ws]]");
 const websocketCvf = buildCaseInsensitiveCommaValueFinder("websocket");
 const upgradeCvf = buildCaseInsensitiveCommaValueFinder("upgrade");
 
-function upgradeWebSocket(request, options = {}) {
-  const inner = toInnerRequest(request);
+function h2WsUpgrade(request) {
+  if (request.method !== "CONNECT") {
+    throw new TypeError(
+      "Invalid Method: ws over h2 should use :method = CONNECT",
+    );
+  }
+  // TODO(@aapoalas): validate :protocol, pseudo-header
+  return newInnerResponse(200);
+}
+
+function h1WsUpgrade(request) {
   const upgrade = request.headers.get("upgrade");
   const upgradeHasWebSocketOption = upgrade !== null &&
     websocketCvf(upgrade);
@@ -435,18 +453,26 @@ function upgradeWebSocket(request, options = {}) {
 
   const accept = ops.op_http_websocket_accept_header(websocketKey);
 
-  const r = newInnerResponse(101);
-  r.headerList = [
+  const innerResp = newInnerResponse(101);
+  innerResp.headerList = [
     ["upgrade", "websocket"],
     ["connection", "Upgrade"],
     ["sec-websocket-accept", accept],
   ];
+  return innerResp;
+}
+
+function upgradeWebSocket(request, options = {}) {
+  const innerReq = toInnerRequest(request);
+  const isH2 = innerReq.httpVersion === 2;
+  const innerResp = isH2 ? h2WsUpgrade(request) : h1WsUpgrade(request);
+  const ownsConn = !isH2; // conn ownership is only transferred on h1
 
   const protocolsStr = request.headers.get("sec-websocket-protocol") || "";
   const protocols = StringPrototypeSplit(protocolsStr, ", ");
   if (protocols && options.protocol) {
     if (ArrayPrototypeIncludes(protocols, options.protocol)) {
-      ArrayPrototypePush(r.headerList, [
+      ArrayPrototypePush(innerResp.headerList, [
         "sec-websocket-protocol",
         options.protocol,
       ]);
@@ -460,14 +486,15 @@ function upgradeWebSocket(request, options = {}) {
   const socket = webidl.createBranded(WebSocket);
   setEventTargetData(socket);
   socket[_server] = true;
+  socket[_ownsConn] = ownsConn;
   socket[_idleTimeoutDuration] = options.idleTimeout ?? 120;
   socket[_idleTimeoutTimeout] = null;
 
-  if (inner._wantsUpgrade) {
-    return inner._wantsUpgrade("upgradeWebSocket", r, socket);
+  if (innerReq._wantsUpgrade) {
+    return innerReq._wantsUpgrade("upgradeWebSocket", innerResp, socket);
   }
 
-  const response = fromInnerResponse(r, "immutable");
+  const response = fromInnerResponse(innerResp, "immutable");
 
   response[_ws] = socket;
 

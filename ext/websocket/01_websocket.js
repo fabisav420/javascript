@@ -112,6 +112,7 @@ const _extensions = Symbol("[[extensions]]");
 const _protocol = Symbol("[[protocol]]");
 const _binaryType = Symbol("[[binaryType]]");
 const _eventLoop = Symbol("[[eventLoop]]");
+const _ownsConn = Symbol("[[ownsConn]]");
 
 const _server = Symbol("[[server]]");
 const _idleTimeoutDuration = Symbol("[[idleTimeout]]");
@@ -124,6 +125,7 @@ class WebSocket extends EventTarget {
     this[_rid] = undefined;
     this[_role] = undefined;
     this[_readyState] = CONNECTING;
+    this[_ownsConn] = true;
     this[_extensions] = "";
     this[_protocol] = "";
     this[_url] = "";
@@ -577,6 +579,7 @@ export {
   _eventLoop,
   _idleTimeoutDuration,
   _idleTimeoutTimeout,
+  _ownsConn,
   _protocol,
   _readyState,
   _rid,

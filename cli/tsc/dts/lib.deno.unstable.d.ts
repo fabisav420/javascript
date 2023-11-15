@@ -2096,6 +2096,25 @@ declare namespace Deno {
     options: ServeUnixInit & ServeUnixOptions,
   ): Server;
 
+  /** The object that is returned from a {@linkcode Deno.upgradeWebSocket}
+   * request.
+   *
+   * @category Web Sockets */
+  export interface WebSocketUpgrade {
+    /** The response object that represents the HTTP response to the client,
+     * which should be used to the {@linkcode RequestEvent} `.respondWith()` for
+     * the upgrade to be successful. */
+    response: Response;
+    /** The {@linkcode WebSocket} interface to communicate to the client via a
+     * web socket. Accessing this will make accessing the `stream` field error out,
+     * as only one of the two may be used. */
+    socket: WebSocket;
+    /** The {@linkcode WebSocketStream} interface to communicate to the client via a
+     * web socket. Accessing this will make accessing the `socket` field error out,
+     * as only one of the two may be used. */
+    stream: WebSocketStream;
+  }
+
   /**
    * A namespace containing runtime APIs available in Jupyter notebooks.
    *

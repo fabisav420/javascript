@@ -33,7 +33,15 @@ import {
   _serverHandleIdleTimeout,
   SERVER,
   WebSocket,
+  WebSocketPrototype,
 } from "ext:deno_websocket/01_websocket.js";
+import {
+  _closed,
+  _closeSent,
+  _createWebSocketStreams,
+  _opened,
+  WebSocketStream,
+} from "ext:deno_websocket/02_websocketstream.js";
 import { TcpConn, UnixConn } from "ext:deno_net/01_net.js";
 import { TlsConn } from "ext:deno_net/02_tls.js";
 import {
@@ -383,31 +391,11 @@ function createRespondWith(
 
         deferred.resolve([conn, res.readBuf]);
       }
-      const ws = resp[_ws];
-      if (ws) {
-        const wsRid = await core.opAsync(
-          "op_http_upgrade_websocket",
-          streamRid,
-        );
-        ws[_rid] = wsRid;
-        ws[_protocol] = resp.headers.get("sec-websocket-protocol");
-
-        httpConn.close();
-
-        ws[_readyState] = WebSocket.OPEN;
-        ws[_role] = SERVER;
-        const event = new Event("open");
-        ws.dispatchEvent(event);
-
-        ws[_eventLoop]();
-        if (ws[_idleTimeoutDuration]) {
-          ws.addEventListener(
-            "close",
-            () => clearTimeout(ws[_idleTimeoutTimeout]),
-          );
-        }
-        ws[_serverHandleIdleTimeout]();
-      }
+      await handleWS(
+        resp,
+        () => core.opAsync("op_http_upgrade_websocket", streamRid),
+        httpConn,
+      );
     } catch (error) {
       abortController.abort(error);
       throw error;
@@ -417,6 +405,49 @@ function createRespondWith(
       }
     }
   };
+}
+
+async function handleWS(resp, getWSRid, httpConn) {
+  if (resp[_ws]) {
+    if (resp[_ws].kind === null) {
+      throw new Error(
+        "No websocket was used from Deno.upgradeWebSocket() call",
+      );
+    }
+    const ws = resp[_ws].kind === "socket"
+      ? resp[_ws].socket
+      : resp[_ws].stream;
+
+    ws[_rid] = await getWSRid();
+
+    httpConn.close();
+
+    if (ObjectPrototypeIsPrototypeOf(WebSocketPrototype, ws)) {
+      ws[_protocol] = resp.headers.get("sec-websocket-protocol");
+
+      ws[_readyState] = WebSocket.OPEN;
+      ws[_role] = SERVER;
+      const event = new Event("open");
+      ws.dispatchEvent(event);
+
+      ws[_eventLoop]();
+      if (ws[_idleTimeoutDuration]) {
+        ws.addEventListener(
+          "close",
+          () => clearTimeout(ws[_idleTimeoutTimeout]),
+        );
+      }
+      ws[_serverHandleIdleTimeout]();
+    } else {
+      const { readable, writable } = ws[_createWebSocketStreams]();
+      ws[_opened].resolve({
+        readable,
+        writable,
+        extensions: "",
+        protocol: resp.headers.get("sec-websocket-protocol"),
+      });
+    }
+  }
 }
 
 const _ws = Symbol("[[associated_ws]]");
@@ -486,9 +517,35 @@ function upgradeWebSocket(request, options = {}) {
 
   const response = fromInnerResponse(r, "immutable");
 
-  response[_ws] = socket;
+  const stream = webidl.createBranded(WebSocketStream);
+  stream[_server] = true;
+  stream[_idleTimeoutDuration] = options.idleTimeout ?? 120;
+  stream[_idleTimeoutTimeout] = null;
+  stream[_opened] = new Deferred();
+  stream[_closeSent] = new Deferred();
+  stream[_closed] = new Deferred();
 
-  return { response, socket };
+  const webSocketSelector = { kind: null, socket, stream };
+  response[_ws] = webSocketSelector;
+
+  return {
+    response,
+    get socket() {
+      if (webSocketSelector.kind === "stream") {
+        throw new TypeError("Websocket already taken as WebSocketStream");
+      }
+      webSocketSelector.kind = "socket";
+      return socket;
+    },
+    get stream() {
+      ops.op_check_unstable("http", "WebSocketStream");
+      if (webSocketSelector.kind === "socket") {
+        throw new TypeError("Websocket already taken as WebSocket");
+      }
+      webSocketSelector.kind = "stream";
+      return stream;
+    },
+  };
 }
 
 function upgradeHttp(req) {
@@ -578,4 +635,4 @@ function buildCaseInsensitiveCommaValueFinder(checkText) {
 internals.buildCaseInsensitiveCommaValueFinder =
   buildCaseInsensitiveCommaValueFinder;
 
-export { _ws, HttpConn, serve, upgradeHttp, upgradeWebSocket };
+export { _ws, handleWS, HttpConn, serve, upgradeHttp, upgradeWebSocket };

@@ -585,4 +585,5 @@ export {
   _serverHandleIdleTimeout,
   SERVER,
   WebSocket,
+  WebSocketPrototype,
 };

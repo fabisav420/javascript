@@ -8,7 +8,7 @@ use deno_core::OpState;
 
 deno_core::extension!(
   deno_runtime,
-  ops = [op_main_module, op_ppid],
+  ops = [op_main_module, op_check_unstable, op_ppid],
   options = { main_module: ModuleSpecifier },
   state = |state, options| {
     state.put::<ModuleSpecifier>(options.main_module);
@@ -93,4 +93,14 @@ pub fn op_ppid() -> i64 {
     use std::os::unix::process::parent_id;
     parent_id().into()
   }
+}
+
+#[op2(fast)]
+fn op_check_unstable(
+  state: &mut OpState,
+  #[string] feature: &str,
+  #[string] api_name: &str,
+) -> Result<(), AnyError> {
+  super::check_unstable(state, feature, api_name);
+  Ok(())
 }

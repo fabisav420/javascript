@@ -424,6 +424,8 @@ declare namespace Deno {
    * A collection of static functions for interacting with pointer objects.
    *
    * @category FFI
+   *
+   * @deprecated Use `Deno.createFfiToken().TokenizedPointer`.
    */
   export class UnsafePointer {
     /** Create a pointer from a numeric value. This one is <i>really</i> dangerous! */
@@ -451,6 +453,8 @@ declare namespace Deno {
    * location (numbers, strings and raw bytes).
    *
    * @category FFI
+   *
+   * @deprecated Use `Deno.createFfiToken().TokenizedPointerView`.
    */
   export class UnsafePointerView {
     constructor(pointer: PointerObject);
@@ -534,6 +538,8 @@ declare namespace Deno {
    * as symbols.
    *
    * @category FFI
+   *
+   * @deprecated Use `Deno.createFfiToken().TokenizedFnPointer`.
    */
   export class UnsafeFnPointer<Fn extends ForeignFunction> {
     /** The pointer to the function. */
@@ -600,6 +606,8 @@ declare namespace Deno {
    * called from foreign threads.
    *
    * @category FFI
+   *
+   * @deprecated Use `Deno.createFfiToken().TokenizedCallback`.
    */
   export class UnsafeCallback<
     Definition extends UnsafeCallbackDefinition = UnsafeCallbackDefinition,
@@ -675,6 +683,335 @@ declare namespace Deno {
      */
     close(): void;
   }
+
+  /** **UNSTABLE**: New API, yet to be vetted.
+   *
+   * A collection of static functions for interacting with pointer objects.
+   *
+   * @category FFI
+   */
+  export interface TokenizedPointer {
+    /** Create a pointer from a numeric value. This one is <i>really</i> dangerous! */
+    create<T = unknown>(value: bigint): PointerValue<T>;
+    /** Returns `true` if the two pointers point to the same address. */
+    equals<T = unknown>(a: PointerValue<T>, b: PointerValue<T>): boolean;
+    /** Return the direct memory pointer to the typed array in memory. */
+    of<T = unknown>(
+      value: BufferSource,
+    ): PointerValue<T>;
+    /** Return a new pointer offset from the original by `offset` bytes. */
+    offset<T = unknown>(
+      value: PointerObject,
+      offset: number,
+    ): PointerValue<T>;
+    /** Get the numeric value of a pointer */
+    value(value: PointerValue): bigint;
+  }
+
+  /** **UNSTABLE**: New API, yet to be vetted.
+   *
+   * An unsafe pointer view to a memory location as specified by the `pointer`
+   * value. The `TokenizedPointerView` API follows the standard built in interface
+   * {@linkcode DataView} for accessing the underlying types at an memory
+   * location (numbers, strings and raw bytes).
+   *
+   * @category FFI
+   */
+  export interface TokenizedPointerView {
+    /** Gets a boolean at the specified byte offset from the pointer. */
+    getBool(offset?: number): boolean;
+    /** Gets an unsigned 8-bit integer at the specified byte offset from the
+     * pointer. */
+    getUint8(offset?: number): number;
+    /** Gets a signed 8-bit integer at the specified byte offset from the
+     * pointer. */
+    getInt8(offset?: number): number;
+    /** Gets an unsigned 16-bit integer at the specified byte offset from the
+     * pointer. */
+    getUint16(offset?: number): number;
+    /** Gets a signed 16-bit integer at the specified byte offset from the
+     * pointer. */
+    getInt16(offset?: number): number;
+    /** Gets an unsigned 32-bit integer at the specified byte offset from the
+     * pointer. */
+    getUint32(offset?: number): number;
+    /** Gets a signed 32-bit integer at the specified byte offset from the
+     * pointer. */
+    getInt32(offset?: number): number;
+    /** Gets an unsigned 64-bit integer at the specified byte offset from the
+     * pointer. */
+    getBigUint64(offset?: number): bigint;
+    /** Gets a signed 64-bit integer at the specified byte offset from the
+     * pointer. */
+    getBigInt64(offset?: number): bigint;
+    /** Gets a signed 32-bit float at the specified byte offset from the
+     * pointer. */
+    getFloat32(offset?: number): number;
+    /** Gets a signed 64-bit float at the specified byte offset from the
+     * pointer. */
+    getFloat64(offset?: number): number;
+    /** Gets a pointer at the specified byte offset from the pointer */
+    getPointer<T = unknown>(offset?: number): PointerValue<T>;
+    /** Gets a C string (`null` terminated string) at the specified byte offset
+     * from the pointer. */
+    getCString(offset?: number): string;
+
+    /** Sets a boolean at the specified byte offset from the pointer. */
+    setBool(value: boolean, offset?: number): void;
+    /** Sets an unsigned 8-bit integer at the specified byte offset from the
+     * pointer. */
+    setUint8(value: number, offset?: number): void;
+    /** Sets a signed 8-bit integer at the specified byte offset from the
+     * pointer. */
+    setInt8(value: number, offset?: number): void;
+    /** Sets an unsigned 16-bit integer at the specified byte offset from the
+     * pointer. */
+    setUint16(value: number, offset?: number): void;
+    /** Sets a signed 16-bit integer at the specified byte offset from the
+     * pointer. */
+    setInt16(value: number, offset?: number): void;
+    /** Sets an unsigned 32-bit integer at the specified byte offset from the
+     * pointer. */
+    setUint32(value: number, offset?: number): void;
+    /** Sets a signed 32-bit integer at the specified byte offset from the
+     * pointer. */
+    setInt32(value: number, offset?: number): void;
+    /** Sets an unsigned 64-bit integer at the specified byte offset from the
+     * pointer. */
+    setBigUint64(value: bigint, offset?: number): void;
+    /** Sets a signed 64-bit integer at the specified byte offset from the
+     * pointer. */
+    setBigInt64(value: bigint, offset?: number): void;
+    /** Sets a signed 32-bit float at the specified byte offset from the
+     * pointer. */
+    setFloat32(value: number, offset?: number): void;
+    /** Sets a signed 64-bit float at the specified byte offset from the
+     * pointer. */
+    setFloat64(value: number, offset?: number): void;
+    /** Sets a pointer at the specified byte offset from the pointer */
+    setPointer<T = unknown>(value: PointerValue<T>, offset?: number): void;
+
+    /** Gets an `ArrayBuffer` of length `byteLength` at the specified byte
+     * offset from the pointer. */
+    getArrayBuffer(byteLength: number, offset?: number): ArrayBuffer;
+    /** Copies the memory of the pointer into a typed array.
+     *
+     * Length is determined from the typed array's `byteLength`.
+     *
+     * Also takes optional byte offset from the pointer. */
+    copyInto(destination: BufferSource, offset?: number): void;
+  }
+
+  interface TokenizedPointerViewConstructor {
+    new (pointer: PointerObject): TokenizedPointerView;
+
+    /** Gets a C string (`null` terminated string) at the specified byte offset
+     * from the specified pointer. */
+    getCString(
+      pointer: PointerObject,
+      offset?: number,
+    ): string;
+    /** Gets an `ArrayBuffer` of length `byteLength` at the specified byte
+     * offset from the specified pointer. */
+    getArrayBuffer(
+      pointer: PointerObject,
+      byteLength: number,
+      offset?: number,
+    ): ArrayBuffer;
+    /** Copies the memory of the specified pointer into a typed array.
+     *
+     * Length is determined from the typed array's `byteLength`.
+     *
+     * Also takes optional byte offset from the pointer. */
+    copyInto(
+      pointer: PointerObject,
+      destination: BufferSource,
+      offset?: number,
+    ): void;
+  }
+
+  /** **UNSTABLE**: New API, yet to be vetted.
+   *
+   * An unsafe pointer to a function, for calling functions that are not present
+   * as symbols.
+   *
+   * @category FFI
+   */
+  export interface TokenizedFnPointer<Fn extends ForeignFunction> {
+    /** Call the foreign function. */
+    call: FromForeignFunction<Fn>;
+  }
+
+  interface TokenizedFnPointerConstructor {
+    new <Fn extends ForeignFunction>(
+      pointer: PointerObject<Fn>,
+      definition: Const<Fn>,
+    ): TokenizedFnPointer<Fn>;
+    /** @deprecated Properly type {@linkcode pointer} using {@linkcode NativeTypedFunction} or {@linkcode UnsafeCallbackDefinition} types. */
+    new <Fn extends ForeignFunction>(
+      pointer: PointerObject,
+      definition: Const<Fn>,
+    ): TokenizedFnPointer<Fn>;
+  }
+
+  /** **UNSTABLE**: New API, yet to be vetted.
+   *
+   * An unsafe function pointer for passing JavaScript functions as C function
+   * pointers to foreign function calls.
+   *
+   * The function pointer remains valid until the `close()` method is called.
+   *
+   * All `TokenizedCallback` are always thread safe in that they can be called from
+   * foreign threads without crashing. However, they do not wake up the Deno event
+   * loop by default.
+   *
+   * If a callback is to be called from foreign threads, use the `threadSafe()`
+   * static constructor or explicitly call `ref()` to have the callback wake up
+   * the Deno event loop when called from foreign threads. This also stops
+   * Deno's process from exiting while the callback still exists and is not
+   * unref'ed.
+   *
+   * Use `deref()` to then allow Deno's process to exit. Calling `deref()` on
+   * a ref'ed callback does not stop it from waking up the Deno event loop when
+   * called from foreign threads.
+   *
+   * @category FFI
+   */
+  export interface TokenizedCallback<
+    Definition extends UnsafeCallbackDefinition = UnsafeCallbackDefinition,
+  > {
+    /** The pointer to the unsafe callback. */
+    readonly pointer: PointerObject<Definition>;
+
+    /**
+     * Increments the callback's reference counting and returns the new
+     * reference count.
+     *
+     * After `ref()` has been called, the callback always wakes up the
+     * Deno event loop when called from foreign threads.
+     *
+     * If the callback's reference count is non-zero, it keeps Deno's
+     * process from exiting.
+     */
+    ref(): number;
+
+    /**
+     * Decrements the callback's reference counting and returns the new
+     * reference count.
+     *
+     * Calling `unref()` does not stop a callback from waking up the Deno
+     * event loop when called from foreign threads.
+     *
+     * If the callback's reference counter is zero, it no longer keeps
+     * Deno's process from exiting.
+     */
+    unref(): number;
+
+    /**
+     * Removes the C function pointer associated with this instance.
+     *
+     * Continuing to use the instance or the C function pointer after closing
+     * the `TokenizedCallback` will lead to errors and crashes.
+     *
+     * Calling this method sets the callback's reference counting to zero,
+     * stops the callback from waking up the Deno event loop when called from
+     * foreign threads and no longer keeps Deno's process from exiting.
+     */
+    close(): void;
+  }
+
+  interface TokenizedCallbackConstructor {
+    new <Definition extends UnsafeCallbackDefinition>(
+      definition: Const<Definition>,
+      callback: UnsafeCallbackFunction<
+        Definition["parameters"],
+        Definition["result"]
+      >,
+    ): TokenizedCallback<Definition>;
+
+    /**
+     * Creates an {@linkcode UnsafeCallback} and calls `ref()` once to allow it to
+     * wake up the Deno event loop when called from foreign threads.
+     *
+     * This also stops Deno's process from exiting while the callback still
+     * exists and is not unref'ed.
+     */
+    threadSafe<
+      Definition extends UnsafeCallbackDefinition = UnsafeCallbackDefinition,
+    >(
+      definition: Const<Definition>,
+      callback: UnsafeCallbackFunction<
+        Definition["parameters"],
+        Definition["result"]
+      >,
+    ): TokenizedCallback<Definition>;
+  }
+  interface FfiToken {
+    /** **UNSTABLE**: New API, yet to be vetted.
+     *
+     * Closes the FFI token, revoking the snapshotted FFI permissions within.
+     *
+     * Continuing to use the tokenized APIs of this token after this will lead
+     * to an error being thrown.
+     */
+    close: () => void;
+    TokenizedCallback: TokenizedCallbackConstructor;
+    TokenizedFnPointer: TokenizedFnPointerConstructor;
+    TokenizedPointer: TokenizedPointer;
+    TokenizedPointerView: TokenizedPointerViewConstructor;
+  }
+
+  /** **UNSTABLE**: New API, yet to be vetted.
+   *
+   * Creates a set of APIs for working with foreign function libraries and
+   * their data. These APIs will continue to work even if FFI permissions are
+   * revoked. This enables limiting the possible attack vectors associated with
+   * FFI permissions by revoking the FFI permissions after calling
+   * `Deno.dlopen()` and `Deno.createFfiToken()`.
+   *
+   * ## WARNING: FFI tokens do not guarantee safe usage of FFI APIs
+   *
+   * While creating FFI tokens enables FFI permissions to be revoked and still
+   * keep using FFI APIs, they do not guarantee that an attacker cannot gain
+   * access to the tokenized APIs. There are multiple ways in which tokenized
+   * APIs may leak. These include but are not limited to:
+   *
+   * - `export`ing any part of the token
+   * - `export`ing directly or indirectly a function that allows controlled
+   *   calling of any part of the token
+   * - assigning any part of the token into an object
+   * - calling an attacker-modifiable function with any part of the token
+   *
+   * Correct usage of the tokens is to create one token per module that needs
+   * FFI APIs, create the token at the top level of that module, never assign
+   * any of the APIs to any object, never export or expose them from the
+   * module, only bind the APIs you need an no others, and always use the
+   * tokenized APIs only through the top level names directly.
+   *
+   * @example Proper usage: The `TokenizedPointer#of` API is the only API bound
+   * and all others are ignored as unused, and usage of the API is restricted
+   * to only parameters that the module author controls directly.
+   * ```ts
+   * const {
+   *   TokenizedPointer: {
+   *     of: getPointerOf,
+   *   },
+   * } = Deno.createFfiToken("./mylib.so");
+   *
+   * export class MyFfiClass {
+   *   #pointer: Deno.PointerObject;
+   *   #buffer: Uint8Array;
+   *
+   *   constructor() {
+   *     this.#buffer = new Uint8Array(64);
+   *     this.#pointer = getPointerOf(this.#buffer)!;
+   *   }
+   * }
+   * ```
+   *
+   * @category FFI
+   */
+  export function createFfiToken(path: string): FfiToken;
 
   /** **UNSTABLE**: New API, yet to be vetted.
    *

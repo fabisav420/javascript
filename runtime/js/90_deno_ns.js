@@ -161,6 +161,7 @@ const denoNsUnstableById = {
 
   // FFI
   2: {
+    createFfiToken: ffi.createFfiToken,
     dlopen: ffi.dlopen,
     UnsafeCallback: ffi.UnsafeCallback,
     UnsafePointer: ffi.UnsafePointer,
@@ -223,6 +224,7 @@ const denoNsUnstable = {
   createHttpClient: httpClient.createHttpClient,
   // TODO(bartlomieju): why is it needed?
   http,
+  createFfiToken: ffi.createFfiToken,
   dlopen: ffi.dlopen,
   UnsafeCallback: ffi.UnsafeCallback,
   UnsafePointer: ffi.UnsafePointer,

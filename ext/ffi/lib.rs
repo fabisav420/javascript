@@ -18,6 +18,7 @@ mod ir;
 mod repr;
 mod r#static;
 mod symbol;
+mod token;
 mod turbocall;
 
 use call::op_ffi_call_nonblocking;
@@ -32,6 +33,7 @@ use r#static::op_ffi_get_static;
 use repr::*;
 use symbol::NativeType;
 use symbol::Symbol;
+use token::*;
 
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("platform not supported");
@@ -99,6 +101,44 @@ deno_core::extension!(deno_ffi,
     op_ffi_unsafe_callback_create<P>,
     op_ffi_unsafe_callback_close,
     op_ffi_unsafe_callback_ref,
+    op_ffi_create_token<P>,
+    op_ffi_token_close,
+    op_ffi_token_ptr_create,
+    op_ffi_token_ptr_equals,
+    op_ffi_token_ptr_of,
+    op_ffi_token_ptr_of_exact,
+    op_ffi_token_ptr_offset,
+    op_ffi_token_ptr_value,
+    op_ffi_token_read_bool,
+    op_ffi_token_read_u8,
+    op_ffi_token_read_i8,
+    op_ffi_token_read_u16,
+    op_ffi_token_read_i16,
+    op_ffi_token_read_u32,
+    op_ffi_token_read_i32,
+    op_ffi_token_read_u64,
+    op_ffi_token_read_i64,
+    op_ffi_token_read_f32,
+    op_ffi_token_read_f64,
+    op_ffi_token_read_ptr,
+    op_ffi_token_write_bool,
+    op_ffi_token_write_u8,
+    op_ffi_token_write_i8,
+    op_ffi_token_write_u16,
+    op_ffi_token_write_i16,
+    op_ffi_token_write_u32,
+    op_ffi_token_write_i32,
+    op_ffi_token_write_u64,
+    op_ffi_token_write_i64,
+    op_ffi_token_write_f32,
+    op_ffi_token_write_f64,
+    op_ffi_token_write_ptr,
+    op_ffi_token_cstr_read,
+    op_ffi_token_get_buf,
+    op_ffi_token_buf_copy_into,
+    op_ffi_token_unsafe_callback_create,
+    op_ffi_token_call_ptr_nonblocking,
+    op_ffi_token_call_ptr,
   ],
   esm = [ "00_ffi.js" ],
   event_loop_middleware = event_loop_middleware,

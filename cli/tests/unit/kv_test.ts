@@ -468,11 +468,11 @@ dbTest("atomic mutation type=sum wrong type in mutation", async (db) => {
     async () => {
       await db.atomic()
         // @ts-expect-error wrong type is intentional
-        .mutate({ key: ["a"], value: 1, type: "sum" })
+        .mutate({ key: ["a"], value: "b", type: "sum" })
         .commit();
     },
     TypeError,
-    "Failed to perform 'sum' mutation on a non-U64 operand",
+    "Some of the parameters are not valid V8 values",
   );
 });
 
@@ -1955,7 +1955,7 @@ Deno.test({
           );
         }
         assertEquals(
-          ((await dbs[0].get(["counter"])).value as Deno.KvU64).value,
+          (await dbs[0].get(["counter"])).value,
           BigInt(concurrency * iterations),
         );
       } finally {
@@ -2247,4 +2247,64 @@ dbTest("set with key versionstamp suffix", async (db) => {
     TypeError,
     "expected string, number, bigint, ArrayBufferView, boolean",
   );
+});
+
+dbTest("generic atomic sum (number)", async (db) => {
+  await db.atomic().sum(["t"], 1).commit();
+  assertEquals((await db.get(["t"])).value, 1);
+
+  await db.atomic().sum(["t"], 2).commit();
+  assertEquals((await db.get(["t"])).value, 3);
+
+  await assertRejects(
+    async () => await db.atomic().sum(["t"], 3n).commit(),
+    TypeError,
+    "Cannot sum Number with BigInt",
+  );
+
+  await assertRejects(
+    async () => await db.atomic().sum(["t"], 3, { max: 5 }).commit(),
+    TypeError,
+    "The result of a Sum operation would exceed its range limit",
+  );
+  await db.atomic().sum(["t"], 3, { max: 5, clamp: true }).commit();
+  assertEquals((await db.get(["t"])).value, 5);
+
+  await assertRejects(
+    async () => await db.atomic().sum(["t"], -2, { min: 4 }).commit(),
+    TypeError,
+    "The result of a Sum operation would exceed its range limit",
+  );
+  await db.atomic().sum(["t"], -2, { min: 4, clamp: true }).commit();
+  assertEquals((await db.get(["t"])).value, 4);
+});
+
+dbTest("generic atomic sum (bigint)", async (db) => {
+  await db.atomic().sum(["t"], 1n).commit();
+  assertEquals((await db.get(["t"])).value, 1n);
+
+  await db.atomic().sum(["t"], 2n).commit();
+  assertEquals((await db.get(["t"])).value, 3n);
+
+  await assertRejects(
+    async () => await db.atomic().sum(["t"], 3).commit(),
+    TypeError,
+    "Cannot sum BigInt with Number",
+  );
+
+  await assertRejects(
+    async () => await db.atomic().sum(["t"], 3n, { max: 5n }).commit(),
+    TypeError,
+    "The result of a Sum operation would exceed its range limit",
+  );
+  await db.atomic().sum(["t"], 3n, { max: 5n, clamp: true }).commit();
+  assertEquals((await db.get(["t"])).value, 5n);
+
+  await assertRejects(
+    async () => await db.atomic().sum(["t"], -2n, { min: 4n }).commit(),
+    TypeError,
+    "The result of a Sum operation would exceed its range limit",
+  );
+  await db.atomic().sum(["t"], -2n, { min: 4n, clamp: true }).commit();
+  assertEquals((await db.get(["t"])).value, 4n);
 });

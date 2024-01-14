@@ -89,7 +89,9 @@ async function startTls(
     hostname = "127.0.0.1",
     certFile = undefined,
     caCerts = [],
-    alpnProtocols = undefined,
+    certChain = undefined,
+    privateKey = undefined,
+    alpnProtocols = undefined
   } = {},
 ) {
   const { 0: rid, 1: localAddr, 2: remoteAddr } = await opStartTls({
@@ -97,7 +99,9 @@ async function startTls(
     hostname,
     certFile,
     caCerts,
-    alpnProtocols,
+    certChain,
+    privateKey,
+    alpnProtocols
   });
   return new TlsConn(rid, remoteAddr, localAddr);
 }

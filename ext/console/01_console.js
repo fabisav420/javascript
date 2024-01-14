@@ -188,6 +188,8 @@ const styles = {
   regexp: "red",
   module: "underline",
   internalError: "red",
+  bold: "bold",
+  italic: "italic",
 };
 
 const defaultFG = 39;
@@ -1349,8 +1351,99 @@ function handleCircular(value, ctx) {
   return ctx.stylize(`[Circular *${index}]`, "special");
 }
 
-const AGGREGATE_ERROR_HAS_AT_PATTERN = new SafeRegExp(/\s+at/);
-const AGGREGATE_ERROR_NOT_EMPTY_LINE_PATTERN = new SafeRegExp(/^(?!\s*$)/gm);
+// Keep in sync with `/runtime/fmt_errors.rs`'s `format_location`.
+function inspectLocation(frame, ctx) {
+  if (frame.isNative) {
+    return ctx.stylize("native", "special");
+  }
+  let result = "";
+  const filename = frame.fileName ?? "";
+  if (filename !== "") {
+    result += ctx.stylize(filename, "special");
+  } else {
+    if (frame.isEval) {
+      result += ctx.stylize(frame.evalOrigin, "special") + ", ";
+    }
+    result += ctx.stylize("<anonymous>", "special");
+  }
+
+  if (typeof frame.lineNumber === "number") {
+    result += ":" +
+      ctx.stylize(NumberPrototypeToString(frame.lineNumber), "number");
+    if (typeof frame.columnNumber === "number") {
+      result += ":" +
+        ctx.stylize(NumberPrototypeToString(frame.columnNumber), "number");
+    }
+  }
+
+  return result;
+}
+
+// Keep in sync with `/runtime/fmt_errors.rs`'s `format_frame`.
+function inspectFrame(frame, ctx) {
+  let result = "";
+  if (frame.isAsync) {
+    result += "async ";
+  }
+  if (frame.isPromiseAll) {
+    result += ctx.stylize(
+      ctx.stylize(
+        `Promise.all (index ${frame.promiseIndex ?? 0})`,
+        "bold",
+      ),
+      "italic",
+    );
+    return result;
+  }
+
+  if (!(frame.isToplevel || frame.isConstructor)) {
+    let formattedMethod = "";
+    if (typeof frame.functionName === "string") {
+      if (
+        typeof frame.typeName === "string" &&
+        !StringPrototypeStartsWith(frame.functionName, frame.typeName)
+      ) {
+        formattedMethod += `${frame.typeName}.`;
+      }
+
+      formattedMethod += frame.functionName;
+
+      if (
+        typeof frame.methodName === "string" &&
+        !StringPrototypeEndsWith(frame.functionName, frame.methodName)
+      ) {
+        formattedMethod += `[as ${frame.methodName}]`;
+      }
+    } else {
+      if (typeof frame.typeName === "string") {
+        formattedMethod += `${frame.typeName}.`;
+      }
+      if (typeof frame.methodName === "string") {
+        formattedMethod += frame.methodName;
+      } else {
+        formattedMethod += "<anonymous>";
+      }
+    }
+
+    result += ctx.stylize(ctx.stylize(formattedMethod, "bold"), "italic");
+  } else if (frame.isConstructor) {
+    result += "new ";
+    if (typeof frame.functionName === "string") {
+      result += ctx.stylize(ctx.stylize(frame.functionName, "bold"), "italic");
+    } else {
+      result += ctx.stylize("<anonymous>", "special");
+    }
+  } else if (typeof frame.functionName === "string") {
+    result += ctx.stylize(ctx.stylize(frame.functionName, "bold"), "italic");
+  } else {
+    result += inspectLocation(frame, ctx);
+    return result;
+  }
+
+  result += ` (${inspectLocation(frame, ctx)})`;
+
+  return result;
+}
 
 function inspectError(value, ctx) {
   const causes = [value];
@@ -1382,45 +1475,55 @@ function inspectError(value, ctx) {
   }
   ArrayPrototypeShift(causes);
 
-  let finalMessage = MapPrototypeGet(refMap, value) ?? "";
+  const refValue = MapPrototypeGet(refMap, value) ?? "";
 
-  if (isAggregateError(value)) {
-    const stackLines = StringPrototypeSplit(value.stack, "\n");
-    while (true) {
-      const line = ArrayPrototypeShift(stackLines);
-      if (RegExpPrototypeTest(AGGREGATE_ERROR_HAS_AT_PATTERN, line)) {
-        ArrayPrototypeUnshift(stackLines, line);
-        break;
-      } else if (typeof line === "undefined") {
-        break;
+  let finalMessage = "";
+
+  const destructuredError = core.destructureError(value);
+
+  let exceptionMessage = destructuredError.exceptionMessage;
+  while (StringPrototypeStartsWith(exceptionMessage, "Uncaught ")) {
+    exceptionMessage = StringPrototypeSlice(exceptionMessage, 9);
+  }
+
+  if (destructuredError.aggregated) {
+    for (let i = 0; i < destructuredError.aggregated.length; i++) {
+      const errorStr = formatValue(
+        ctx,
+        value.errors[i],
+        0,
+      );
+
+      const splitErrorStr = StringPrototypeSplit(errorStr, "\n");
+      for (let j = 0; j < splitErrorStr.length; j++) {
+        finalMessage += "\n" + StringPrototypeRepeat(" ", 4) + splitErrorStr[j];
       }
-
-      finalMessage += line;
-      finalMessage += "\n";
-    }
-    const aggregateMessage = ArrayPrototypeJoin(
-      ArrayPrototypeMap(
-        value.errors,
-        (error) =>
-          StringPrototypeReplace(
-            inspectArgs([error]),
-            AGGREGATE_ERROR_NOT_EMPTY_LINE_PATTERN,
-            StringPrototypeRepeat(" ", 4),
-          ),
-      ),
-      "\n",
-    );
-    finalMessage += aggregateMessage;
-    finalMessage += "\n";
-    finalMessage += ArrayPrototypeJoin(stackLines, "\n");
-  } else {
-    const stack = value.stack;
-    if (stack?.includes("\n    at")) {
-      finalMessage += stack;
-    } else {
-      finalMessage += `[${stack || ErrorPrototypeToString(value)}]`;
     }
   }
+
+  const frames = ArrayPrototypeFilter(
+    destructuredError.frames,
+    (frame) =>
+      !(frame.fileName ===
+          "ext:deno_console/01_console.js" &&
+        frame.lineNumber === 1482),
+  );
+
+  if (frames.length > 0) {
+    finalMessage = refValue + exceptionMessage + finalMessage;
+
+    for (let i = 0; i < frames.length; i++) {
+      finalMessage += "\n" + StringPrototypeRepeat(" ", 4) +
+        "at " +
+        inspectFrame(frames[i], ctx);
+    }
+  } else if (!isAggregateError(value)) {
+    finalMessage = refValue +
+      `[${value.stack || ErrorPrototypeToString(value)}]` + finalMessage;
+  } else {
+    finalMessage = refValue + exceptionMessage + finalMessage;
+  }
+
   finalMessage += ArrayPrototypeJoin(
     ArrayPrototypeMap(
       causes,

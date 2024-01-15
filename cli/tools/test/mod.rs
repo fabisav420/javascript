@@ -23,9 +23,17 @@ use crate::util::path::is_script_ext;
 use crate::util::path::mapped_specifier_for_tsc;
 use crate::worker::CliMainWorkerFactory;
 
+use deno_ast::parse_module;
+use deno_ast::swc::ast;
+use deno_ast::swc::ast::ExprOrSpread;
+use deno_ast::swc::ast::MemberProp;
 use deno_ast::swc::common::comments::CommentKind;
+use deno_ast::swc::visit::Visit;
+use deno_ast::swc::visit::VisitWith;
 use deno_ast::MediaType;
+use deno_ast::ParseParams;
 use deno_ast::SourceRangedForSpanned;
+use deno_ast::SourceTextInfo;
 use deno_core::anyhow;
 use deno_core::anyhow::bail;
 use deno_core::anyhow::Context as _;
@@ -1114,6 +1122,127 @@ fn is_supported_test_ext(path: &Path) -> bool {
   }
 }
 
+struct TestFilterCollector<'a> {
+  should_run: bool,
+  filter: &'a str,
+}
+
+impl<'a> TestFilterCollector<'a> {
+  fn new(filter: &'a str) -> Self {
+    Self {
+      should_run: false,
+      filter,
+    }
+  }
+}
+
+impl Visit for TestFilterCollector<'_> {
+  fn visit_call_expr(&mut self, node: &ast::CallExpr) {
+    // Short circuit if we already know that we need to run this file
+    if self.should_run {
+      return;
+    }
+
+    if let ast::Callee::Expr(callee_expr) = &node.callee {
+      match callee_expr.as_ref() {
+        ast::Expr::Member(member_expr) => {
+          // Identify: Deno.test()
+          if let MemberProp::Ident(ident) = &member_expr.prop {
+            if ident.sym.eq("test") {
+              match *member_expr.obj.clone() {
+                ast::Expr::Ident(obj_ident) => {
+                  if obj_ident.sym.eq("Deno") {
+                    self.should_run =
+                      match_test_name_filter(&node.args, &self.filter);
+                  }
+                }
+                _ => (),
+              }
+            }
+            // Identify: Deno.test.only()
+            // Identify: Deno.test.skip()
+            else if ident.sym.eq("ignore") || ident.sym.eq("only") {
+              let ast::Expr::Member(child_member_expr) =
+                member_expr.obj.as_ref()
+              else {
+                return;
+              };
+
+              let ast::MemberProp::Ident(child_ns_prop_ident) =
+                &child_member_expr.prop
+              else {
+                return;
+              };
+
+              let ast::Expr::Ident(child_ns_obj_ident) =
+                &child_member_expr.obj.as_ref()
+              else {
+                return;
+              };
+
+              if child_ns_obj_ident.sym.eq("Deno")
+                && child_ns_prop_ident.sym.eq("test")
+              {
+                self.should_run =
+                  match_test_name_filter(&node.args, &self.filter);
+                return;
+              }
+            }
+          }
+        }
+        _ => (),
+      }
+    }
+  }
+}
+
+fn match_test_name_filter(args: &Vec<ExprOrSpread>, filter: &str) -> bool {
+  if let Some(first) = args.first() {
+    return match *first.expr.clone() {
+      // Case: Deno.test("foo", ...
+      ast::Expr::Lit(ast::Lit::Str(lit)) => {
+        return lit.value.to_string().contains(filter)
+      }
+      // Case: Deno.test(`foo ${someVar}`, ...
+      // In this case we cannot statically determine the name, so
+      // we mark this file as "should run"
+      ast::Expr::Tpl(_) => return true,
+      // Case: Deno.test(function foo() { ...
+      ast::Expr::Fn(fn_expr) => {
+        if let Some(name) = fn_expr.ident {
+          return name.sym.contains(filter);
+        }
+        return false;
+      }
+      // Case: Deno.test({ name: ...
+      // Case: Deno.test({ fn: function foo() {...
+      ast::Expr::Object(obj_lit) => {
+        for prop in &obj_lit.props {
+          if let ast::PropOrSpread::Prop(prop) = prop {
+            if let ast::Prop::KeyValue(key_value_prop) = prop.as_ref() {
+              if let ast::PropName::Ident(ast::Ident { sym, .. }) =
+                &key_value_prop.key
+              {
+                if sym == "name" {
+                  if let ast::Expr::Lit(ast::Lit::Str(lit_str)) =
+                    key_value_prop.value.as_ref()
+                  {
+                    let name = lit_str.value.to_string();
+                    return name.contains(filter);
+                  }
+                }
+              }
+            }
+          }
+        }
+        return false;
+      }
+      _ => false,
+    };
+  }
+  return false;
+}
+
 /// Collects specifiers marking them with the appropriate test mode while maintaining the natural
 /// input order.
 ///
@@ -1168,8 +1297,11 @@ async fn fetch_specifiers_with_test_mode(
   file_fetcher: &FileFetcher,
   files: FilePatterns,
   doc: &bool,
+  filter_opt: Option<&str>,
 ) -> Result<Vec<(ModuleSpecifier, TestMode)>, AnyError> {
   let mut specifiers_with_mode = collect_specifiers_with_test_mode(files, doc)?;
+
+  let mut filtered_specifiers: Vec<(ModuleSpecifier, TestMode)> = vec![];
 
   for (specifier, mode) in &mut specifiers_with_mode {
     let file = file_fetcher
@@ -1181,9 +1313,41 @@ async fn fetch_specifiers_with_test_mode(
     {
       *mode = TestMode::Documentation
     }
+
+    // If the `--filter` argument is set, we do a quick AST pass
+    // to check if any of the tests in this file match the filter.
+    // If one matches or when we cannot statically determine if a
+    // test case matches, we'll mark this file as needing to be run.
+    // If we analyze all tests cases and none of them match, we'll
+    // filter this test out. Even though this may seem a bit wasteful
+    // because we don't re-use the parsed AST result, this is roughly
+    // about 166x faster than running the JS test file only to realize
+    // after that, that none of the tests in it matched.
+    if let Some(filter) = filter_opt {
+      let mut collector = TestFilterCollector::new(filter);
+      let parsed_module = parse_module(ParseParams {
+        specifier: specifier.to_string(),
+        media_type: MediaType::TypeScript,
+        capture_tokens: false,
+        scope_analysis: false,
+        maybe_syntax: None,
+        text_info: SourceTextInfo::new(file.source),
+      })
+      .unwrap();
+      parsed_module.module().visit_with(&mut collector);
+      if collector.should_run {
+        filtered_specifiers.push((specifier.clone(), mode.clone()));
+      }
+    }
   }
 
-  Ok(specifiers_with_mode)
+  let result = if filter_opt.is_some() {
+    filtered_specifiers
+  } else {
+    specifiers_with_mode
+  };
+
+  Ok(result)
 }
 
 pub async fn run_tests(
@@ -1206,6 +1370,7 @@ pub async fn run_tests(
     file_fetcher,
     test_options.files.clone(),
     &test_options.doc,
+    test_options.filter.as_deref(),
   )
   .await?;
 
@@ -1354,6 +1519,7 @@ pub async fn run_tests_with_watch(
           file_fetcher,
           test_options.files.clone(),
           &test_options.doc,
+          test_options.filter.as_deref(),
         )
         .await?
         .into_iter()

@@ -150,6 +150,7 @@ pub struct Metadata {
   pub maybe_import_map: Option<(Url, String)>,
   pub entrypoint: ModuleSpecifier,
   pub node_modules: Option<NodeModules>,
+  pub origin_data_folder_path: Option<PathBuf>,
 }
 
 pub fn load_npm_vfs(root_dir_path: PathBuf) -> Result<FileBackedVfs, AnyError> {
@@ -557,6 +558,7 @@ impl<'a> DenoCompileBinaryWriter<'a> {
       entrypoint: entrypoint.clone(),
       maybe_import_map,
       node_modules,
+      origin_data_folder_path: compile_flags.origin_data_folder_path.clone(),
     };
 
     write_binary_bytes(

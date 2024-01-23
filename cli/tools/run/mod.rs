@@ -4,9 +4,11 @@ use std::io::Read;
 
 use deno_ast::MediaType;
 use deno_core::error::AnyError;
+use deno_core::url::Url;
 use deno_runtime::permissions::Permissions;
 use deno_runtime::permissions::PermissionsContainer;
 
+use crate::args::DenoSubcommand;
 use crate::args::EvalFlags;
 use crate::args::Flags;
 use crate::args::RunFlags;
@@ -14,10 +16,31 @@ use crate::args::WatchFlagsWithPaths;
 use crate::factory::CliFactory;
 use crate::factory::CliFactoryBuilder;
 use crate::file_fetcher::File;
+use crate::file_fetcher::FileFetcher;
 use crate::util;
 use crate::util::file_watcher::WatcherRestartMode;
 
 pub mod hmr;
+
+fn add_fake_stdin_module(
+  specifier: Url,
+  source: Vec<u8>,
+  file_fetcher: &FileFetcher,
+) -> Result<(), AnyError> {
+  // Create a dummy source file.
+  let source_file = File {
+    maybe_types: None,
+    media_type: MediaType::TypeScript,
+    source: String::from_utf8(source)?.into(),
+    specifier,
+    maybe_headers: None,
+  };
+  // Save our fake file into file fetcher cache
+  // to allow module access by TS compiler
+  file_fetcher.insert_cached(source_file);
+
+  Ok(())
+}
 
 pub async fn run_script(
   flags: Flags,
@@ -68,43 +91,19 @@ To grant permissions, set them before the script argument. For example:
     &cli_options.permissions_options(),
   )?);
   let worker_factory = factory.create_cli_main_worker_factory().await?;
-  let mut worker = worker_factory
-    .create_main_worker(main_module, permissions)
-    .await?;
 
-  let exit_code = worker.run().await?;
-  Ok(exit_code)
-}
-
-pub async fn run_from_stdin(flags: Flags) -> Result<i32, AnyError> {
-  let factory = CliFactory::from_flags(flags).await?;
-  let cli_options = factory.cli_options();
-  let main_module = cli_options.resolve_main_module()?;
-
-  maybe_npm_install(&factory).await?;
-
-  let file_fetcher = factory.file_fetcher()?;
-  let worker_factory = factory.create_cli_main_worker_factory().await?;
-  let permissions = PermissionsContainer::new(Permissions::from_options(
-    &cli_options.permissions_options(),
-  )?);
-  let mut source = Vec::new();
-  std::io::stdin().read_to_end(&mut source)?;
-  // Create a dummy source file.
-  let source_file = File {
-    maybe_types: None,
-    media_type: MediaType::TypeScript,
-    source: String::from_utf8(source)?.into(),
-    specifier: main_module.clone(),
-    maybe_headers: None,
-  };
-  // Save our fake file into file fetcher cache
-  // to allow module access by TS compiler
-  file_fetcher.insert_cached(source_file);
+  // If file is stdin, save stdin contents to file fetcher cache
+  if run_flags.is_stdin() {
+    let file_fetcher = factory.file_fetcher()?;
+    let mut source = Vec::new();
+    std::io::stdin().read_to_end(&mut source)?;
+    add_fake_stdin_module(main_module.clone(), source, file_fetcher)?;
+  }
 
   let mut worker = worker_factory
     .create_main_worker(main_module, permissions)
     .await?;
+
   let exit_code = worker.run().await?;
   Ok(exit_code)
 }
@@ -115,6 +114,16 @@ async fn run_with_watch(
   flags: Flags,
   watch_flags: WatchFlagsWithPaths,
 ) -> Result<i32, AnyError> {
+  // Read source from stdin
+  let stdin_source = match &flags.subcommand {
+    DenoSubcommand::Run(run_flags) if run_flags.is_stdin() => {
+      let mut source = Vec::new();
+      std::io::stdin().read_to_end(&mut source)?;
+      Some(source)
+    }
+    _ => None,
+  };
+
   util::file_watcher::watch_recv(
     flags,
     util::file_watcher::PrintConfig::new_with_banner(
@@ -124,15 +133,23 @@ async fn run_with_watch(
     ),
     WatcherRestartMode::Automatic,
     move |flags, watcher_communicator, _changed_paths| {
+      let stdin_source = stdin_source.clone();
       Ok(async move {
         let factory = CliFactoryBuilder::new()
-          .build_from_flags_for_watcher(flags, watcher_communicator.clone())
+          .build_from_flags_for_watcher(
+            flags.clone(),
+            watcher_communicator.clone(),
+          )
           .await?;
         let cli_options = factory.cli_options();
         let main_module = cli_options.resolve_main_module()?;
 
         maybe_npm_install(&factory).await?;
 
+        if let Some(source) = stdin_source {
+          let file_fetcher = factory.file_fetcher()?;
+          add_fake_stdin_module(main_module.clone(), source, file_fetcher)?;
+        }
         let _ = watcher_communicator.watch_paths(cli_options.watch_paths());
 
         let permissions = PermissionsContainer::new(Permissions::from_options(

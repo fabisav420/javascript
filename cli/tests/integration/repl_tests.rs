@@ -953,7 +953,7 @@ fn npm_packages() {
       vec!["repl", "--quiet", "--allow-read", "--allow-env"],
       Some(vec![
         r#"import chalk from "npm:chalk";"#,
-        "chalk.red('hel' + 'lo')",
+        "chalk.red('hell' + 'o')",
       ]),
       Some(env_vars.clone()),
       true,
@@ -969,7 +969,7 @@ fn npm_packages() {
       vec!["repl", "--quiet", "--allow-read", "--allow-env"],
       Some(vec![
         r#"const chalk = await import("npm:chalk");"#,
-        "chalk.default.red('hel' + 'lo')",
+        "chalk.default.red('hell' + 'o')",
       ]),
       Some(env_vars.clone()),
       true,

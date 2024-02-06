@@ -1029,6 +1029,17 @@ const ci = {
         },
       ],
     },
+    "typos": {
+      name: "spell-check",
+      "runs-on": "ubuntu-latest",
+      steps: [
+        { uses: "actions/checkout@v3" },
+        {
+          uses: "crate-ci/typos@master",
+          with: { config: "./.github/workflows/typos.toml" },
+        },
+      ],
+    },
   },
 };
 

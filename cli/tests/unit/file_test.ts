@@ -110,3 +110,77 @@ Deno.test(function inspectFile() {
     `File { name: "file-name.txt", size: 0, type: "text/plain" }`,
   );
 });
+
+Deno.test(function fileConstructorOptionsValidation() {
+  // deno-lint-ignore ban-types
+  type AnyFunction = Function;
+  const assert = {
+    strictEqual: assertEquals,
+    throws(fn: AnyFunction, expected: AnyFunction) {
+      try {
+        fn();
+        throw new Error("Missing expected exception");
+      } catch (e) {
+        if (e instanceof expected) {
+          return;
+        }
+
+        throw new Error("Wrong type of error", { cause: e });
+      }
+    },
+  };
+
+  function mustCall(fn: AnyFunction, nb = 1) {
+    const timeout = setTimeout(() => {
+      if (nb !== 0) throw new Error(`Expected ${nb} more calls`);
+    }, 999);
+    return function (this: unknown) {
+      nb--;
+      if (nb === 0) clearTimeout(timeout);
+      else if (nb < 0) {
+        throw new Error("Function has been called more times than expected");
+      }
+      return Reflect.apply(fn, this, arguments);
+    };
+  }
+
+  [undefined, null, Object.create(null), { lastModified: undefined }, {
+    get lastModified() {
+      return undefined;
+    },
+  }].forEach((options) => {
+    assert.strictEqual(
+      new File([], "", options).lastModified,
+      new File([], "").lastModified,
+    );
+  });
+
+  Reflect.defineProperty(Object.prototype, "get", {
+    // @ts-ignore __proto__ null is important here to avoid prototype pollution.
+    __proto__: null,
+    configurable: true,
+    get() {
+      throw new Error();
+    },
+  });
+  Reflect.defineProperty(Object.prototype, "lastModified", {
+    // @ts-ignore __proto__ null is important here to avoid prototype pollution.
+    __proto__: null,
+    configurable: true,
+    get: mustCall(() => 3, 7),
+  });
+
+  [{}, [], () => {}, Number, new Number(), new String(), new Boolean()].forEach(
+    (options) => {
+      // @ts-ignore We want to test an options object that doesn't meet the typical types.
+      assert.strictEqual(new File([], "", options).lastModified, 3);
+    },
+  );
+  [0, "", true, Symbol(), 0n].forEach((options) => {
+    // @ts-ignore We want to test an options object that doesn't meet the typical types.
+    assert.throws(() => new File([], "", options), TypeError);
+  });
+
+  // @ts-ignore cleaning up.
+  delete Object.prototype.lastModified;
+});

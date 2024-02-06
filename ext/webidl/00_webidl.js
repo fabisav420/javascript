@@ -41,7 +41,6 @@ const {
   NumberIsNaN,
   NumberMAX_SAFE_INTEGER,
   NumberMIN_SAFE_INTEGER,
-  ObjectAssign,
   ObjectCreate,
   ObjectDefineProperties,
   ObjectDefineProperty,
@@ -762,7 +761,7 @@ function createDictionaryConverter(name, ...dictionaries) {
     }
     const esDict = V;
 
-    const idlDict = ObjectAssign({}, defaultValues);
+    const idlDict = { __proto__: null, ...defaultValues };
 
     // NOTE: fast path Null and Undefined.
     if ((V === undefined || V === null) && !hasRequiredKey) {

@@ -2069,3 +2069,19 @@ Deno.test("Response with subarray TypedArray body", async () => {
   const expected = new Uint8Array([2, 3, 4, 5]);
   assertEquals(actual, expected);
 });
+
+Deno.test(
+  async function responseUint8ArrayByteStream() {
+    const reader = new Response(new Uint8Array([1, 2])).body!.getReader({
+      mode: "byob",
+    });
+    await reader.cancel();
+  },
+);
+
+Deno.test(
+  async function responseStringByteStream() {
+    const reader = new Response("foo").body!.getReader({ mode: "byob" });
+    await reader.cancel();
+  },
+);

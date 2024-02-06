@@ -104,6 +104,7 @@ class InnerBody {
         readableStreamClose(this.streamOrStatic);
       } else {
         this.streamOrStatic = new ReadableStream({
+          type: "bytes",
           start(controller) {
             controller.enqueue(chunkToU8(body));
             controller.close();

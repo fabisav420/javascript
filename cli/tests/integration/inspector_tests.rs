@@ -1183,10 +1183,6 @@ async fn inspector_profile() {
   tester.child.wait().unwrap();
 }
 
-// TODO(bartlomieju): this test became flaky on CI after wiring up "ext/node"
-// compatibility layer. Can't reproduce this problem locally for either Mac M1
-// or Linux. Ignoring for now to unblock further integration of "ext/node".
-#[ignore]
 #[tokio::test]
 async fn inspector_break_on_first_line_npm_esm() {
   let context = TestContextBuilder::for_npm().build();
@@ -1251,10 +1247,6 @@ async fn inspector_break_on_first_line_npm_esm() {
   tester.child.wait().unwrap();
 }
 
-// TODO(bartlomieju): this test became flaky on CI after wiring up "ext/node"
-// compatibility layer. Can't reproduce this problem locally for either Mac M1
-// or Linux. Ignoring for now to unblock further integration of "ext/node".
-#[ignore]
 #[tokio::test]
 async fn inspector_break_on_first_line_npm_cjs() {
   let context = TestContextBuilder::for_npm().build();
@@ -1319,10 +1311,6 @@ async fn inspector_break_on_first_line_npm_cjs() {
   tester.child.wait().unwrap();
 }
 
-// TODO(bartlomieju): this test became flaky on CI after wiring up "ext/node"
-// compatibility layer. Can't reproduce this problem locally for either Mac M1
-// or Linux. Ignoring for now to unblock further integration of "ext/node".
-#[ignore]
 #[tokio::test]
 async fn inspector_error_with_npm_import() {
   let script = util::testdata_path().join("inspector/error_with_npm_import.js");

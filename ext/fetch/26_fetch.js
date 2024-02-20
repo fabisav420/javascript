@@ -236,6 +236,16 @@ async function mainFetch(req, recursive, terminator) {
 }
 
 /**
+ * @param {URL} a
+ * @param {URL} b
+ * @returns {boolean}
+ */
+function isSameOrigin(a, b) {
+  if (a.origin === null) return false;
+  return a.origin === b.origin;
+}
+
+/**
  * @param {InnerRequest} request
  * @param {InnerResponse} response
  * @param {AbortSignal} terminator
@@ -272,6 +282,7 @@ function httpRedirectFetch(request, response, terminator) {
       "Can not redeliver a streaming request body after a redirect",
     );
   }
+  let clearBodyHeaders = false;
   if (
     ((response.status === 301 || response.status === 302) &&
       request.method === "POST") ||
@@ -281,12 +292,18 @@ function httpRedirectFetch(request, response, terminator) {
   ) {
     request.method = "GET";
     request.body = null;
+    clearBodyHeaders = true;
+  }
+  const noAuth = !isSameOrigin(request.currentUrl(), locationURL);
+  if (clearBodyHeaders || noAuth) {
     for (let i = 0; i < request.headerList.length; i++) {
+      const headerName = byteLowerCase(request.headerList[i][0]);
       if (
-        ArrayPrototypeIncludes(
-          REQUEST_BODY_HEADER_NAMES,
-          byteLowerCase(request.headerList[i][0]),
-        )
+        noAuth && headerName == "authorization" ||
+        clearBodyHeaders && ArrayPrototypeIncludes(
+            REQUEST_BODY_HEADER_NAMES,
+            headerName,
+          )
       ) {
         ArrayPrototypeSplice(request.headerList, i, 1);
         i--;

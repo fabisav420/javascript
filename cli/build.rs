@@ -154,7 +154,7 @@ mod ts {
     op_crate_libs.insert("deno.websocket", deno_websocket::get_declaration());
     op_crate_libs.insert("deno.webstorage", deno_webstorage::get_declaration());
     op_crate_libs.insert("deno.canvas", deno_canvas::get_declaration());
-    op_crate_libs.insert("deno.crypto", deno_crypto::get_declaration());
+    op_crate_libs.insert("deno.crypto", deno_crypto_get_declaration());
     op_crate_libs.insert(
       "deno.broadcast_channel",
       deno_broadcast_channel::get_declaration(),
@@ -480,10 +480,15 @@ fn main() {
   }
 }
 
-fn deno_webgpu_get_declaration() -> PathBuf {
+fn dts_dir() -> PathBuf {
   let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-  manifest_dir
-    .join("tsc")
-    .join("dts")
-    .join("lib.deno_webgpu.d.ts")
+  manifest_dir.join("tsc").join("dts")
+}
+
+fn deno_webgpu_get_declaration() -> PathBuf {
+  dts_dir().join("lib.deno_webgpu.d.ts")
+}
+
+fn deno_crypto_get_declaration() -> PathBuf {
+  dts_dir().join("lib.deno_crypto.d.ts")
 }

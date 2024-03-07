@@ -8,6 +8,7 @@ use std::sync::Arc;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use deno_config::ConfigFile;
+use deno_config::TsConfigType;
 use deno_config::WorkspaceMemberConfig;
 use deno_core::anyhow::bail;
 use deno_core::anyhow::Context;
@@ -140,6 +141,8 @@ async fn prepare_publish(
   };
   let file_patterns = deno_json.to_publish_config()?.map(|c| c.files);
 
+  let maybe_jsx_config_pragmas = generate_jsx_config_pragmas(deno_json)?;
+
   let diagnostics_collector = diagnostics_collector.clone();
   let tarball = deno_core::unsync::spawn_blocking(move || {
     let unfurler = SpecifierUnfurler::new(
@@ -153,6 +156,7 @@ async fn prepare_publish(
       &diagnostics_collector,
       &unfurler,
       file_patterns,
+      maybe_jsx_config_pragmas,
     )
     .context("Failed to create a tarball")
   })
@@ -1020,6 +1024,28 @@ fn verify_version_manifest(
   }
 
   Ok(())
+}
+
+fn generate_jsx_config_pragmas(
+  config_file: &ConfigFile,
+) -> Result<Option<String>, AnyError> {
+  let ts_config =
+    deno_config::get_ts_config_for_emit(TsConfigType::Emit, Some(config_file))?;
+  let options: deno_config::EmitConfigOptions =
+    serde_json::from_value(ts_config.ts_config.0).unwrap();
+  let mut pragmas = Vec::with_capacity(4);
+
+  pragmas.push(format!("/** @jsx {} */", options.jsx));
+  pragmas.push(format!("/** @jsxFactory {} */", options.jsx_factory));
+  pragmas.push(format!(
+    "/** @jsxFragmentFactory {} */",
+    options.jsx_fragment_factory
+  ));
+  if let Some(jsx_import_source) = options.jsx_import_source {
+    pragmas.push(format!("/** @jsxImportSource {} */", jsx_import_source));
+  }
+
+  Ok(Some(pragmas.join("")))
 }
 
 #[cfg(test)]

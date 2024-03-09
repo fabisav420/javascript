@@ -67,11 +67,12 @@ impl CipherContext {
     self,
     input: &[u8],
     output: &mut [u8],
+    auto_padding: bool,
   ) -> Result<Tag, AnyError> {
     Rc::try_unwrap(self.cipher)
       .map_err(|_| type_error("Cipher context is already in use"))?
       .into_inner()
-      .r#final(input, output)
+      .r#final(input, output, auto_padding)
   }
 }
 
@@ -95,11 +96,12 @@ impl DecipherContext {
     input: &[u8],
     output: &mut [u8],
     auth_tag: &[u8],
+    auto_padding: bool,
   ) -> Result<(), AnyError> {
     Rc::try_unwrap(self.decipher)
       .map_err(|_| type_error("Decipher context is already in use"))?
       .into_inner()
-      .r#final(input, output, auth_tag)
+      .r#final(input, output, auth_tag, auto_padding)
   }
 }
 
@@ -209,40 +211,96 @@ impl Cipher {
   }
 
   /// r#final encrypts the last block of the input data.
-  fn r#final(self, input: &[u8], output: &mut [u8]) -> Result<Tag, AnyError> {
+  fn r#final(
+    self,
+    input: &[u8],
+    output: &mut [u8],
+    auto_padding: bool,
+  ) -> Result<Tag, AnyError> {
     assert!(input.len() < 16);
     use Cipher::*;
     match self {
-      Aes128Cbc(encryptor) => {
-        let _ = (*encryptor)
-          .encrypt_padded_b2b_mut::<Pkcs7>(input, output)
-          .map_err(|_| type_error("Cannot pad the input data"))?;
+      Aes128Cbc(mut encryptor) => {
+        if auto_padding {
+          let _ = (*encryptor)
+            .encrypt_padded_b2b_mut::<Pkcs7>(input, output)
+            .map_err(|_| type_error("Cannot pad the input data"))?;
+        } else {
+          assert!(input.len() % 16 == 0);
+          for (input, output) in input.chunks(16).zip(output.chunks_mut(16)) {
+            encryptor.encrypt_block_b2b_mut(input.into(), output.into());
+          }
+        }
         Ok(None)
       }
-      Aes128Ecb(encryptor) => {
-        let _ = (*encryptor)
-          .encrypt_padded_b2b_mut::<Pkcs7>(input, output)
-          .map_err(|_| type_error("Cannot pad the input data"))?;
+      Aes128Ecb(mut encryptor) => {
+        if auto_padding {
+          let _ = (*encryptor)
+            .encrypt_padded_b2b_mut::<Pkcs7>(input, output)
+            .map_err(|_| type_error("Cannot pad the input data"))?;
+        } else {
+          assert!(input.len() % 16 == 0);
+          for (input, output) in input.chunks(16).zip(output.chunks_mut(16)) {
+            encryptor.encrypt_block_b2b_mut(input.into(), output.into());
+          }
+        }
         Ok(None)
       }
-      Aes192Ecb(encryptor) => {
-        let _ = (*encryptor)
-          .encrypt_padded_b2b_mut::<Pkcs7>(input, output)
-          .map_err(|_| type_error("Cannot pad the input data"))?;
+      Aes192Ecb(mut encryptor) => {
+        if auto_padding {
+          let _ = (*encryptor)
+            .encrypt_padded_b2b_mut::<Pkcs7>(input, output)
+            .map_err(|_| type_error("Cannot pad the input data"))?;
+        } else {
+          assert!(input.len() % 16 == 0);
+          for (input, output) in input.chunks(16).zip(output.chunks_mut(16)) {
+            encryptor.encrypt_block_b2b_mut(input.into(), output.into());
+          }
+        }
         Ok(None)
       }
-      Aes256Ecb(encryptor) => {
-        let _ = (*encryptor)
-          .encrypt_padded_b2b_mut::<Pkcs7>(input, output)
-          .map_err(|_| type_error("Cannot pad the input data"))?;
+      Aes256Ecb(mut encryptor) => {
+        if auto_padding {
+          let _ = (*encryptor)
+            .encrypt_padded_b2b_mut::<Pkcs7>(input, output)
+            .map_err(|_| type_error("Cannot pad the input data"))?;
+        } else {
+          assert!(input.len() % 16 == 0);
+          for (input, output) in input.chunks(16).zip(output.chunks_mut(16)) {
+            encryptor.encrypt_block_b2b_mut(input.into(), output.into());
+          }
+        }
         Ok(None)
       }
-      Aes128Gcm(cipher) => Ok(Some(cipher.finish().to_vec())),
-      Aes256Gcm(cipher) => Ok(Some(cipher.finish().to_vec())),
-      Aes256Cbc(encryptor) => {
-        let _ = (*encryptor)
-          .encrypt_padded_b2b_mut::<Pkcs7>(input, output)
-          .map_err(|_| type_error("Cannot pad the input data"))?;
+      Aes128Gcm(mut cipher) => {
+        if auto_padding {
+          Ok(Some(cipher.finish().to_vec()))
+        } else {
+          output[..input.len()].copy_from_slice(input);
+          cipher.encrypt(output);
+          Ok(None)
+        }
+      }
+      Aes256Gcm(mut cipher) => {
+        if auto_padding {
+          Ok(Some(cipher.finish().to_vec()))
+        } else {
+          output[..input.len()].copy_from_slice(input);
+          cipher.encrypt(output);
+          Ok(None)
+        }
+      }
+      Aes256Cbc(mut encryptor) => {
+        if auto_padding {
+          let _ = (*encryptor)
+            .encrypt_padded_b2b_mut::<Pkcs7>(input, output)
+            .map_err(|_| type_error("Cannot pad the input data"))?;
+        } else {
+          assert!(input.len() % 16 == 0);
+          for (input, output) in input.chunks(16).zip(output.chunks_mut(16)) {
+            encryptor.encrypt_block_b2b_mut(input.into(), output.into());
+          }
+        }
         Ok(None)
       }
     }
@@ -348,58 +406,102 @@ impl Decipher {
     input: &[u8],
     output: &mut [u8],
     auth_tag: &[u8],
+    auto_padding: bool,
   ) -> Result<(), AnyError> {
     use Decipher::*;
     match self {
-      Aes128Cbc(decryptor) => {
-        assert!(input.len() == 16);
-        let _ = (*decryptor)
-          .decrypt_padded_b2b_mut::<Pkcs7>(input, output)
-          .map_err(|_| type_error("Cannot unpad the input data"))?;
-        Ok(())
-      }
-      Aes128Ecb(decryptor) => {
-        assert!(input.len() == 16);
-        let _ = (*decryptor)
-          .decrypt_padded_b2b_mut::<Pkcs7>(input, output)
-          .map_err(|_| type_error("Cannot unpad the input data"))?;
-        Ok(())
-      }
-      Aes192Ecb(decryptor) => {
-        assert!(input.len() == 16);
-        let _ = (*decryptor)
-          .decrypt_padded_b2b_mut::<Pkcs7>(input, output)
-          .map_err(|_| type_error("Cannot unpad the input data"))?;
-        Ok(())
-      }
-      Aes256Ecb(decryptor) => {
-        assert!(input.len() == 16);
-        let _ = (*decryptor)
-          .decrypt_padded_b2b_mut::<Pkcs7>(input, output)
-          .map_err(|_| type_error("Cannot unpad the input data"))?;
-        Ok(())
-      }
-      Aes128Gcm(decipher) => {
-        let tag = decipher.finish();
-        if tag.as_slice() == auth_tag {
-          Ok(())
+      Aes128Cbc(mut decryptor) => {
+        assert!(input.len() % 16 == 0);
+        if auto_padding {
+          let _ = (*decryptor)
+            .decrypt_padded_b2b_mut::<Pkcs7>(input, output)
+            .map_err(|_| type_error("Cannot unpad the input data"))?;
         } else {
-          Err(type_error("Failed to authenticate data"))
+          for (input, output) in input.chunks(16).zip(output.chunks_mut(16)) {
+            decryptor.decrypt_block_b2b_mut(input.into(), output.into());
+          }
+        }
+        Ok(())
+      }
+      Aes128Ecb(mut decryptor) => {
+        assert!(input.len() % 16 == 0);
+        if auto_padding {
+          let _ = (*decryptor)
+            .decrypt_padded_b2b_mut::<Pkcs7>(input, output)
+            .map_err(|_| type_error("Cannot unpad the input data"))?;
+        } else {
+          for (input, output) in input.chunks(16).zip(output.chunks_mut(16)) {
+            decryptor.decrypt_block_b2b_mut(input.into(), output.into());
+          }
+        }
+        Ok(())
+      }
+      Aes192Ecb(mut decryptor) => {
+        assert!(input.len() % 16 == 0);
+        if auto_padding {
+          let _ = (*decryptor)
+            .decrypt_padded_b2b_mut::<Pkcs7>(input, output)
+            .map_err(|_| type_error("Cannot unpad the input data"))?;
+        } else {
+          for (input, output) in input.chunks(16).zip(output.chunks_mut(16)) {
+            decryptor.decrypt_block_b2b_mut(input.into(), output.into());
+          }
+        }
+        Ok(())
+      }
+      Aes256Ecb(mut decryptor) => {
+        assert!(input.len() % 16 == 0);
+        if auto_padding {
+          let _ = (*decryptor)
+            .decrypt_padded_b2b_mut::<Pkcs7>(input, output)
+            .map_err(|_| type_error("Cannot unpad the input data"))?;
+        } else {
+          for (input, output) in input.chunks(16).zip(output.chunks_mut(16)) {
+            decryptor.decrypt_block_b2b_mut(input.into(), output.into());
+          }
+        }
+
+        Ok(())
+      }
+      Aes128Gcm(mut decipher) => {
+        if auto_padding {
+          let tag = decipher.finish();
+          if tag.as_slice() == auth_tag {
+            Ok(())
+          } else {
+            Err(type_error("Failed to authenticate data"))
+          }
+        } else {
+          output[..input.len()].copy_from_slice(input);
+          decipher.decrypt(output);
+          Ok(())
         }
       }
-      Aes256Gcm(decipher) => {
-        let tag = decipher.finish();
-        if tag.as_slice() == auth_tag {
-          Ok(())
+      Aes256Gcm(mut decipher) => {
+        if auto_padding {
+          let tag = decipher.finish();
+          if tag.as_slice() == auth_tag {
+            Ok(())
+          } else {
+            Err(type_error("Failed to authenticate data"))
+          }
         } else {
-          Err(type_error("Failed to authenticate data"))
+          output[..input.len()].copy_from_slice(input);
+          decipher.decrypt(output);
+          Ok(())
         }
       }
-      Aes256Cbc(decryptor) => {
-        assert!(input.len() == 16);
-        let _ = (*decryptor)
-          .decrypt_padded_b2b_mut::<Pkcs7>(input, output)
-          .map_err(|_| type_error("Cannot unpad the input data"))?;
+      Aes256Cbc(mut decryptor) => {
+        assert!(input.len() % 16 == 0);
+        if auto_padding {
+          let _ = (*decryptor)
+            .decrypt_padded_b2b_mut::<Pkcs7>(input, output)
+            .map_err(|_| type_error("Cannot unpad the input data"))?;
+        } else {
+          for (input, output) in input.chunks(16).zip(output.chunks_mut(16)) {
+            decryptor.decrypt_block_b2b_mut(input.into(), output.into());
+          }
+        }
         Ok(())
       }
     }

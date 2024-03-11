@@ -1,6 +1,7 @@
 // Copyright 2018-2024 the Deno authors. All rights reserved. MIT license.
 
 mod fs_fetch_handler;
+mod wasm_streaming;
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -69,6 +70,7 @@ pub use data_url;
 pub use reqwest;
 
 pub use fs_fetch_handler::FsFetchHandler;
+pub use wasm_streaming::handle_wasm_streaming;
 
 #[derive(Clone)]
 pub struct Options {

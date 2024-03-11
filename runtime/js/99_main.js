@@ -457,7 +457,8 @@ function runtimeStart(
   tsVersion,
   target,
 ) {
-  core.setWasmStreamingCallback(fetch.handleWasmStreaming);
+  core.setMacrotaskCallback(timers.handleTimerMacrotask);
+  core.setMacrotaskCallback(promiseRejectMacrotaskCallback);
   core.setReportExceptionCallback(event.reportException);
   op_set_format_exception_callback(formatException);
   version.setVersions(

@@ -43,6 +43,7 @@ use rsa::Pkcs1v15Encrypt;
 use rsa::RsaPrivateKey;
 use rsa::RsaPublicKey;
 
+pub mod certificate;
 mod cipher;
 mod dh;
 mod digest;

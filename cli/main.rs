@@ -274,12 +274,28 @@ fn exit_with_message(message: &str, code: i32) -> ! {
   std::process::exit(code);
 }
 
+fn maybe_format_commonjs_error(e: &JsError) -> Option<String> {
+  if e.name == Some("ReferenceError".to_string()) {
+    if let Some(msg) = &e.message {
+      if msg.contains("module is not defined") {
+        return Some(format!("{} Deno doesn't support CommonJS modules, change problematic module into an ES module.", colors::cyan("hint:")));
+      }
+    }
+  }
+
+  None
+}
+
 fn exit_for_error(error: AnyError) -> ! {
   let mut error_string = format!("{error:?}");
   let mut error_code = 1;
 
   if let Some(e) = error.downcast_ref::<JsError>() {
     error_string = format_js_error(e);
+    // TODO(bartlomieju): there must be a smarter way to add hint to `JsError`.
+    if let Some(commonjs_error) = maybe_format_commonjs_error(e) {
+      error_string = format!("{}\n\n    {}", error_string, commonjs_error);
+    }
   } else if let Some(args::LockfileError::IntegrityCheckFailed(e)) =
     error.downcast_ref::<args::LockfileError>()
   {

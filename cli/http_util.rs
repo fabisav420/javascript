@@ -16,6 +16,7 @@ use deno_runtime::deno_fetch::reqwest;
 use deno_runtime::deno_fetch::reqwest::header::LOCATION;
 use deno_runtime::deno_fetch::reqwest::Response;
 use deno_runtime::deno_fetch::CreateHttpClientOptions;
+use deno_runtime::deno_fetch::DnsResolver;
 use deno_runtime::deno_tls::RootCertStoreProvider;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
@@ -225,6 +226,7 @@ pub struct HttpClient {
   options: CreateHttpClientOptions,
   root_cert_store_provider: Option<Arc<dyn RootCertStoreProvider>>,
   cell: once_cell::sync::OnceCell<reqwest::Client>,
+  dns_resolver: Option<DnsResolver>,
 }
 
 impl std::fmt::Debug for HttpClient {
@@ -240,6 +242,18 @@ impl HttpClient {
     root_cert_store_provider: Option<Arc<dyn RootCertStoreProvider>>,
     unsafely_ignore_certificate_errors: Option<Vec<String>>,
   ) -> Self {
+    Self::with_dns_resolver(
+      root_cert_store_provider,
+      unsafely_ignore_certificate_errors,
+      None,
+    )
+  }
+
+  pub fn with_dns_resolver(
+    root_cert_store_provider: Option<Arc<dyn RootCertStoreProvider>>,
+    unsafely_ignore_certificate_errors: Option<Vec<String>>,
+    dns_resolver: Option<DnsResolver>,
+  ) -> Self {
     Self {
       options: CreateHttpClientOptions {
         unsafely_ignore_certificate_errors,
@@ -247,6 +261,7 @@ impl HttpClient {
       },
       root_cert_store_provider,
       cell: Default::default(),
+      dns_resolver,
     }
   }
 
@@ -256,6 +271,7 @@ impl HttpClient {
       options: Default::default(),
       root_cert_store_provider: Default::default(),
       cell: Default::default(),
+      dns_resolver: None,
     };
     result.cell.set(client).unwrap();
     result
@@ -270,6 +286,7 @@ impl HttpClient {
             Some(provider) => Some(provider.get_or_try_init()?.clone()),
             None => None,
           },
+          dns_resolver: self.dns_resolver.clone(),
           ..self.options.clone()
         },
       )

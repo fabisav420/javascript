@@ -29,10 +29,13 @@ use deno_runtime::fmt_errors::format_js_error;
 use deno_runtime::tokio_util::create_and_run_current_thread_with_maybe_metrics;
 pub use deno_runtime::UNSTABLE_GRANULAR_FLAGS;
 use deno_terminal::colors;
+use standalone::binary::load_npm_vfs;
+use standalone::DenoCompileFileSystem;
 
 use std::borrow::Cow;
 use std::env;
 use std::env::current_exe;
+use std::os::unix::ffi::OsStrExt;
 
 use crate::args::Flags;
 
@@ -79,7 +82,16 @@ fn main() {
     match standalone {
       Ok(Some(future)) => {
         let (metadata, eszip) = future.await?;
-        let exit_code = standalone::run(eszip, metadata).await?;
+        let image_name =
+          current_exe_path.file_name().unwrap().to_string_lossy();
+        let exit_code = standalone::run(
+          eszip,
+          metadata,
+          current_exe_path.as_os_str().as_bytes(),
+          &image_name,
+          |x| async move { load_npm_vfs(x).map(DenoCompileFileSystem::new) },
+        )
+        .await?;
         std::process::exit(exit_code);
       }
       Ok(None) => Ok(()),

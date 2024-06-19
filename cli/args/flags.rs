@@ -84,6 +84,7 @@ pub struct CompileFlags {
   pub target: Option<String>,
   pub no_terminal: bool,
   pub include: Vec<String>,
+  pub eszip: bool,
 }
 
 impl CompileFlags {
@@ -529,6 +530,7 @@ pub struct Flags {
   pub v8_flags: Vec<String>,
   pub code_cache_enabled: bool,
   pub permissions: PermissionFlags,
+  pub eszip: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
@@ -3242,6 +3244,7 @@ fn runtime_args(
     .arg(seed_arg())
     .arg(enable_testing_features_arg())
     .arg(strace_ops_arg())
+    .arg(eszip_arg())
 }
 
 fn inspect_args(app: Command) -> Command {
@@ -3347,6 +3350,13 @@ fn cached_only_arg() -> Arg {
     .long("cached-only")
     .action(ArgAction::SetTrue)
     .help("Require that remote dependencies are already cached")
+}
+
+fn eszip_arg() -> Arg {
+  Arg::new("eszip")
+    .long("eszip")
+    .action(ArgAction::SetTrue)
+    .help("Run eszip")
 }
 
 /// Used for subcommands that operate on executable scripts only.
@@ -3763,6 +3773,7 @@ fn compile_parse(flags: &mut Flags, matches: &mut ArgMatches) {
   let output = matches.remove_one::<String>("output");
   let target = matches.remove_one::<String>("target");
   let no_terminal = matches.get_flag("no-terminal");
+  let eszip = matches.get_flag("eszip");
   let include = match matches.remove_many::<String>("include") {
     Some(f) => f.collect(),
     None => vec![],
@@ -3776,6 +3787,7 @@ fn compile_parse(flags: &mut Flags, matches: &mut ArgMatches) {
     target,
     no_terminal,
     include,
+    eszip,
   });
 }
 
@@ -4540,6 +4552,7 @@ fn runtime_args_parse(
   enable_testing_features_arg_parse(flags, matches);
   env_file_arg_parse(flags, matches);
   strace_ops_parse(flags, matches);
+  eszip_arg_parse(flags, matches);
 }
 
 fn inspect_arg_parse(flags: &mut Flags, matches: &mut ArgMatches) {
@@ -4616,6 +4629,12 @@ fn strace_ops_parse(flags: &mut Flags, matches: &mut ArgMatches) {
 fn cached_only_arg_parse(flags: &mut Flags, matches: &mut ArgMatches) {
   if matches.get_flag("cached-only") {
     flags.cached_only = true;
+  }
+}
+
+fn eszip_arg_parse(flags: &mut Flags, matches: &mut ArgMatches) {
+  if matches.get_flag("eszip") {
+    flags.eszip = true;
   }
 }
 

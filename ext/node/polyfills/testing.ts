@@ -11,6 +11,25 @@ export function run() {
 
 function noop() {}
 
+type SuiteFn = () => unknown;
+
+class NodeSuiteContext {
+  before: SuiteFn | null = null;
+  beforeEach: SuiteFn | null = null;
+  afterEach: SuiteFn | null = null;
+  after: SuiteFn | null = null;
+  didRunBefore = false;
+  firstTestId = -1;
+  lastTestId = -1;
+  only = false;
+  skip = false;
+
+  constructor(public parent: NodeSuiteContext | null, public name: string) {}
+}
+let TEST_ID = 0;
+const ROOT_SUITE = new NodeSuiteContext(null, "");
+let CURRENT_SUITE = ROOT_SUITE;
+
 class NodeTestContext {
   #denoContext: Deno.TestContext;
 
@@ -113,13 +132,45 @@ function prepareOptions(name, options, fn, overrides) {
   return { fn, options: finalOptions, name };
 }
 
-function wrapTestFn(fn, resolve) {
+function wrapTestFn(
+  fn: (ctx: NodeTestContext, done: () => void) => unknown,
+  ancestors: NodeSuiteContext[],
+  id: number,
+  resolve: () => void,
+) {
   return async function (t) {
+    let i = ancestors.length;
+    while (i--) {
+      const ancestor = ancestors[i];
+      if (ancestor.firstTestId === id) {
+        await ancestor.before?.();
+      }
+
+      await ancestor.beforeEach?.();
+    }
+
     const nodeTestContext = new NodeTestContext(t);
     try {
-      await fn(nodeTestContext);
+      await fn(nodeTestContext, () => {
+        throw "done";
+      });
+    } catch (err) {
+      if (err !== "done") {
+        throw err;
+      }
     } finally {
-      resolve();
+      try {
+        for (let i = 0; i < ancestors.length; i++) {
+          const ancestor = ancestors[i];
+          await ancestor.afterEach?.();
+
+          if (ancestor.lastTestId === id) {
+            await ancestor.after?.();
+          }
+        }
+      } finally {
+        resolve();
+      }
     }
   };
 }
@@ -127,13 +178,49 @@ function wrapTestFn(fn, resolve) {
 function prepareDenoTest(name, options, fn, overrides) {
   const prepared = prepareOptions(name, options, fn, overrides);
 
-  const { promise, resolve } = Promise.withResolvers();
+  const { promise, resolve } = Promise.withResolvers<void>();
+  let ignore = prepared.options.todo || prepared.options.skip;
+  let id = -1;
+  if (!ignore) {
+    id = TEST_ID++;
+    if (CURRENT_SUITE.firstTestId === -1) {
+      CURRENT_SUITE.firstTestId = id;
+    }
+
+    CURRENT_SUITE.lastTestId = id;
+  }
+
+  let testName = prepared.name;
+  const ancestors: NodeSuiteContext[] = [];
+  let parent: NodeSuiteContext | null = CURRENT_SUITE;
+  let only = prepared.options.only;
+
+  while (parent !== null && parent.parent !== null) {
+    ancestors.push(parent);
+
+    testName = parent.name + " > " + testName;
+    if (!ignore) {
+      if (parent.firstTestId === -1) {
+        parent.firstTestId = id;
+      }
+
+      if (parent.only) {
+        only = true;
+      }
+      if (parent.skip) {
+        ignore = true;
+        only = false;
+      }
+    }
+
+    parent = parent.parent;
+  }
 
   const denoTestOptions = {
-    name: prepared.name,
-    fn: wrapTestFn(prepared.fn, resolve),
-    only: prepared.options.only,
-    ignore: prepared.options.todo || prepared.options.skip,
+    name: testName,
+    fn: wrapTestFn(prepared.fn, ancestors, id, resolve),
+    only,
+    ignore,
     sanitizeExit: false,
     sanitizeOps: false,
     sanitizeResources: false,
@@ -158,28 +245,54 @@ test.only = function only(name, options, fn) {
   return prepareDenoTest(name, options, fn, { only: true });
 };
 
-export function describe() {
-  notImplemented("test.describe");
+function prepareDescribe(
+  name: string,
+  fn: () => unknown,
+  options: { skip?: boolean; only?: boolean } = {},
+) {
+  const ctx = new NodeSuiteContext(CURRENT_SUITE, name);
+  ctx.only = Boolean(options.only);
+  ctx.skip = Boolean(options.skip);
+
+  const prev = CURRENT_SUITE;
+  CURRENT_SUITE = ctx;
+  try {
+    fn();
+  } finally {
+    CURRENT_SUITE = prev;
+    prev.lastTestId = TEST_ID;
+  }
 }
 
-export function it() {
-  notImplemented("test.it");
+export function describe(
+  name: string,
+  fn: () => unknown,
+): void | Promise<void> {
+  return prepareDescribe(name, fn);
+}
+describe.only = (name: string, fn: () => unknown) => {
+  return prepareDescribe(name, fn, { only: true });
+};
+describe.skip = (name: string, fn: () => unknown) => {
+  return prepareDescribe(name, fn, { skip: true });
+};
+
+export const it = test;
+
+export function before(fn: () => unknown) {
+  CURRENT_SUITE.before = fn;
 }
 
-export function before() {
-  notImplemented("test.before");
+export function after(fn: () => unknown) {
+  CURRENT_SUITE.after = fn;
 }
 
-export function after() {
-  notImplemented("test.after");
+export function beforeEach(fn: () => unknown) {
+  CURRENT_SUITE.beforeEach = fn;
 }
 
-export function beforeEach() {
-  notImplemented("test.beforeEach");
-}
-
-export function afterEach() {
-  notImplemented("test.afterEach");
+export function afterEach(fn: () => unknown) {
+  CURRENT_SUITE.afterEach = fn;
 }
 
 export const mock = {

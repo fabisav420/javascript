@@ -89,7 +89,6 @@ fn main() {
           metadata,
           current_exe_path.as_os_str().as_bytes(),
           &image_name,
-          |x| async move { load_npm_vfs(x).map(DenoCompileFileSystem::new) },
         )
         .await?;
         std::process::exit(exit_code);

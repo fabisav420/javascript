@@ -72,7 +72,6 @@ use std::sync::Arc;
 use virtual_fs::FileBackedVfs;
 
 pub mod binary;
-pub mod eszip_vfs;
 mod file_system;
 mod virtual_fs;
 
@@ -329,15 +328,11 @@ impl RootCertStoreProvider for StandaloneRootCertStoreProvider {
   }
 }
 
-pub async fn run<
-  V: FileSystem + 'static,
-  F: Future<Output = Result<V, AnyError>>,
->(
+pub async fn run(
   mut eszip: eszip::EszipV2,
   metadata: Metadata,
   image_path: &[u8],
   image_name: &str,
-  load_npm_vfs: impl FnOnce(PathBuf) -> F,
 ) -> Result<i32, AnyError> {
   let main_module = &metadata.entrypoint;
   let image_path_hash = Sha256::digest(image_path);
@@ -381,10 +376,9 @@ pub async fn run<
           npm_cache_dir.root_dir().to_owned()
         };
         let vfs = load_npm_vfs(vfs_root_dir_path.clone())
-          .await
           .context("Failed to load npm vfs.")?;
         let maybe_node_modules_path = if node_modules_dir {
-          Some(vfs_root_dir_path.clone())
+          Some(vfs.root().to_path_buf())
         } else {
           None
         };
@@ -392,7 +386,8 @@ pub async fn run<
           Arc::new(PackageJsonDepsProvider::new(
             package_json_deps.map(|serialized| serialized.into_deps()),
           ));
-        let fs = Arc::new(vfs) as Arc<dyn deno_fs::FileSystem>;
+        let fs = Arc::new(DenoCompileFileSystem::new(vfs))
+          as Arc<dyn deno_fs::FileSystem>;
         let npm_resolver =
           create_cli_npm_resolver(CliNpmResolverCreateOptions::Managed(
             CliNpmResolverManagedCreateOptions {
@@ -424,14 +419,14 @@ pub async fn run<
       Some(binary::NodeModules::Byonm { package_json_deps }) => {
         let vfs_root_dir_path = root_path;
         let vfs = load_npm_vfs(vfs_root_dir_path.clone())
-          .await
           .context("Failed to load npm vfs.")?;
         let node_modules_path = vfs_root_dir_path.join("node_modules");
         let package_json_deps_provider =
           Arc::new(PackageJsonDepsProvider::new(
             package_json_deps.map(|serialized| serialized.into_deps()),
           ));
-        let fs = Arc::new(vfs) as Arc<dyn deno_fs::FileSystem>;
+        let fs = Arc::new(DenoCompileFileSystem::new(vfs))
+          as Arc<dyn deno_fs::FileSystem>;
         let npm_resolver =
           create_cli_npm_resolver(CliNpmResolverCreateOptions::Byonm(
             CliNpmResolverByonmCreateOptions {

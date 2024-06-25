@@ -21,9 +21,6 @@ use crate::factory::CliFactory;
 use crate::factory::CliFactoryBuilder;
 use crate::file_fetcher::File;
 use crate::standalone::binary::Metadata;
-use crate::standalone::binary::NodeModules;
-use crate::standalone::eszip_vfs::EszipFileSystem;
-use crate::standalone::eszip_vfs::EszipFileSystemResources;
 use crate::util;
 use crate::util::file_watcher::WatcherRestartMode;
 
@@ -101,20 +98,6 @@ To grant permissions, set them before the script argument. For example:
     let entrypoint = deno_ast::ModuleSpecifier::parse(&entrypoint)
       .with_context(|| format!("Invalid module specifier: {entrypoint}"))?;
 
-    let node_modules: Option<NodeModules> =
-      if let Some(x) = eszip.get_module("internal://node_modules") {
-        Some(
-          deno_core::serde_json::from_slice(&x.source().await.unwrap()[..])
-            .with_context(|| {
-              format!("Failed to parse internal://node_modules")
-            })?,
-        )
-      } else {
-        None
-      };
-    let npm_vfs = EszipFileSystemResources::load(&eszip)
-      .with_context(|| "Failed to load npm_vfs")?;
-
     return crate::standalone::run(
       eszip,
       Metadata {
@@ -130,13 +113,12 @@ To grant permissions, set them before the script argument. For example:
           .unsafely_ignore_certificate_errors,
         maybe_import_map: maybe_import_map,
         entrypoint,
-        node_modules,
+        node_modules: None,
         disable_deprecated_api_warning: false,
         unstable_config: flags.unstable_config,
       },
       main_module.to_string().as_bytes(),
       "run-eszip",
-      |root| async move { Ok(EszipFileSystem::new(npm_vfs, root)) },
     )
     .await;
   }

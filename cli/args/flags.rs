@@ -9081,7 +9081,8 @@ mod tests {
           args: vec![],
           target: None,
           no_terminal: false,
-          include: vec![]
+          include: vec![],
+          eszip: false,
         }),
         type_check_mode: TypeCheckMode::Local,
         ..Flags::default()
@@ -9103,7 +9104,8 @@ mod tests {
           args: svec!["foo", "bar", "-p", "8080"],
           target: None,
           no_terminal: true,
-          include: vec![]
+          include: vec![],
+          eszip: false,
         }),
         import_map_path: Some("import_map.json".to_string()),
         no_remote: true,

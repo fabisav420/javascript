@@ -101,7 +101,6 @@ To grant permissions, set them before the script argument. For example:
     let entrypoint = deno_ast::ModuleSpecifier::parse(&entrypoint)
       .with_context(|| format!("Invalid module specifier: {entrypoint}"))?;
 
-    println!("using entrypoint: {}", entrypoint);
     let node_modules: Option<NodeModules> =
       if let Some(x) = eszip.get_module("internal://node_modules") {
         Some(

@@ -3353,8 +3353,9 @@ fn cached_only_arg() -> Arg {
 }
 
 fn eszip_arg() -> Arg {
-  Arg::new("eszip")
-    .long("eszip")
+  Arg::new("eszip-internal-do-not-use")
+    .hide(true)
+    .long("eszip-internal-do-not-use")
     .action(ArgAction::SetTrue)
     .help("Run eszip")
 }
@@ -3773,7 +3774,7 @@ fn compile_parse(flags: &mut Flags, matches: &mut ArgMatches) {
   let output = matches.remove_one::<String>("output");
   let target = matches.remove_one::<String>("target");
   let no_terminal = matches.get_flag("no-terminal");
-  let eszip = matches.get_flag("eszip");
+  let eszip = matches.get_flag("eszip-internal-do-not-use");
   let include = match matches.remove_many::<String>("include") {
     Some(f) => f.collect(),
     None => vec![],
@@ -4633,7 +4634,7 @@ fn cached_only_arg_parse(flags: &mut Flags, matches: &mut ArgMatches) {
 }
 
 fn eszip_arg_parse(flags: &mut Flags, matches: &mut ArgMatches) {
-  if matches.get_flag("eszip") {
+  if matches.get_flag("eszip-internal-do-not-use") {
     flags.eszip = true;
   }
 }

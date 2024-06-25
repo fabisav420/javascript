@@ -257,15 +257,7 @@ async fn resolve_compile_executable_output_path(
   output_path.ok_or_else(|| generic_error(
     "An executable name was not provided. One could not be inferred from the URL. Aborting.",
   )).map(|output_path| {
-    if compile_flags.eszip {
-      if let Some(ext) = output_path.extension() {
-        output_path.with_extension(format!("{}.eszip", ext.to_string_lossy()))
-      } else {
-        output_path.with_extension("eszip")
-      }
-    } else {
-      get_os_specific_filepath(output_path, &compile_flags.target)
-    }
+    get_os_specific_filepath(output_path, &compile_flags.target)
   })
 }
 

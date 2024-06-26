@@ -35,7 +35,6 @@ use standalone::DenoCompileFileSystem;
 use std::borrow::Cow;
 use std::env;
 use std::env::current_exe;
-use std::os::unix::ffi::OsStrExt;
 
 use crate::args::Flags;
 
@@ -87,7 +86,7 @@ fn main() {
         let exit_code = standalone::run(
           eszip,
           metadata,
-          current_exe_path.as_os_str().as_bytes(),
+          current_exe_path.as_os_str().as_encoded_bytes(),
           &image_name,
         )
         .await?;

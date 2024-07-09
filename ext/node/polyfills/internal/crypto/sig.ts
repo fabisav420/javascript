@@ -27,7 +27,6 @@ import type {
 import {
   kConsumePrivate,
   kConsumePublic,
-  kCreatePrivate,
   KeyObject,
   prepareAsymmetricKey,
 } from "ext:deno_node/internal/crypto/keys.ts";

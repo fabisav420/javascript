@@ -1,3 +1,4 @@
+// Copyright 2018-2024 the Deno authors. All rights reserved. MIT license.
 use deno_core::error::generic_error;
 use deno_core::error::type_error;
 use deno_core::error::AnyError;
@@ -53,7 +54,7 @@ impl KeyObjectHandle {
         };
 
         let signature = signer
-          .sign(Some(&mut OsRng), &key, digest)
+          .sign(Some(&mut OsRng), key, digest)
           .map_err(|_| generic_error("failed to sign digest with RSA"))?;
         Ok(signature.into())
       }

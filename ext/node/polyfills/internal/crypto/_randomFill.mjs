@@ -3,10 +3,7 @@
 // TODO(petamoriken): enable prefer-primordials for node polyfills
 // deno-lint-ignore-file prefer-primordials
 
-import {
-  op_node_fill_random,
-  op_node_fill_random_async,
-} from "ext:core/ops";
+import { op_node_fill_random, op_node_fill_random_async } from "ext:core/ops";
 
 import {
   MAX_SIZE as kMaxUint32,

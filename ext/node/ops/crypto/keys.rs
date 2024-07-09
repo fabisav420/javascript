@@ -45,9 +45,9 @@ use spki::SubjectPublicKeyInfoRef;
 
 #[derive(Clone)]
 pub enum KeyObjectHandle {
-  AsymmetricPrivateKey(AsymmetricPrivateKey),
-  AsymmetricPublicKey(AsymmetricPublicKey),
-  SecretKey(Box<[u8]>),
+  AsymmetricPrivate(AsymmetricPrivateKey),
+  AsymmetricPublic(AsymmetricPublicKey),
+  Secret(Box<[u8]>),
 }
 
 impl GarbageCollected for KeyObjectHandle {}
@@ -117,7 +117,7 @@ impl KeyObjectHandle {
   /// Returns the private key if the handle is an asymmetric private key.
   pub fn as_private_key(&self) -> Option<&AsymmetricPrivateKey> {
     match self {
-      KeyObjectHandle::AsymmetricPrivateKey(key) => Some(key),
+      KeyObjectHandle::AsymmetricPrivate(key) => Some(key),
       _ => None,
     }
   }
@@ -126,10 +126,10 @@ impl KeyObjectHandle {
   /// a private key, it derives the public key from it and returns that.
   pub fn as_public_key(&self) -> Option<Cow<'_, AsymmetricPublicKey>> {
     match self {
-      KeyObjectHandle::AsymmetricPrivateKey(key) => {
+      KeyObjectHandle::AsymmetricPrivate(key) => {
         Some(Cow::Owned(key.to_public_key()))
       }
-      KeyObjectHandle::AsymmetricPublicKey(key) => Some(Cow::Borrowed(key)),
+      KeyObjectHandle::AsymmetricPublic(key) => Some(Cow::Borrowed(key)),
       _ => None,
     }
   }
@@ -137,7 +137,7 @@ impl KeyObjectHandle {
   /// Returns the secret key if the handle is a secret key.
   pub fn as_secret_key(&self) -> Option<&[u8]> {
     match self {
-      KeyObjectHandle::SecretKey(key) => Some(key),
+      KeyObjectHandle::Secret(key) => Some(key),
       _ => None,
     }
   }
@@ -507,7 +507,7 @@ impl KeyObjectHandle {
       _ => return Err(type_error("unsupported private key oid")),
     };
 
-    Ok(KeyObjectHandle::AsymmetricPrivateKey(private_key))
+    Ok(KeyObjectHandle::AsymmetricPrivate(private_key))
   }
 
   pub fn new_asymmetric_public_key_from_js(
@@ -669,7 +669,7 @@ impl KeyObjectHandle {
       _ => return Err(type_error("unsupported public key oid")),
     };
 
-    Ok(KeyObjectHandle::AsymmetricPublicKey(public_key))
+    Ok(KeyObjectHandle::AsymmetricPublic(public_key))
   }
 }
 
@@ -685,17 +685,17 @@ impl AsymmetricPublicKey {
             .into_boxed_slice();
           Ok(der)
         }
-        _ => {
-          return Err(type_error(
-            "exporting non-RSA public key as PKCS#1 is not supported",
-          ))
-        }
+        _ => Err(type_error(
+          "exporting non-RSA public key as PKCS#1 is not supported",
+        )),
       },
       "spki" => {
         let der = match self {
           AsymmetricPublicKey::Rsa(key) => key
             .to_public_key_der()
-            .map_err(|_| type_error("invalid RSA public key"))?,
+            .map_err(|_| type_error("invalid RSA public key"))?
+            .into_vec()
+            .into_boxed_slice(),
           AsymmetricPublicKey::RsaPss(_key) => {
             return Err(generic_error(
               "exporting RSA-PSS public key as SPKI is not supported yet",
@@ -703,7 +703,9 @@ impl AsymmetricPublicKey {
           }
           AsymmetricPublicKey::Dsa(key) => key
             .to_public_key_der()
-            .map_err(|_| type_error("invalid DSA public key"))?,
+            .map_err(|_| type_error("invalid DSA public key"))?
+            .into_vec()
+            .into_boxed_slice(),
           AsymmetricPublicKey::Ec(key) => {
             let (sec1, oid) = match key {
               EcPublicKey::P224(key) => (key.to_sec1_bytes(), ID_SECP224R1_OID),
@@ -720,11 +722,10 @@ impl AsymmetricPublicKey {
                 .map_err(|_| type_error("invalid EC public key"))?,
             };
 
-            let der = spki
+            spki
               .to_der()
               .map_err(|_| type_error("invalid EC public key"))?
-              .into_boxed_slice();
-            return Ok(der);
+              .into_boxed_slice()
           }
           AsymmetricPublicKey::X25519(key) => {
             let spki = SubjectPublicKeyInfoRef {
@@ -736,11 +737,10 @@ impl AsymmetricPublicKey {
                 .map_err(|_| type_error("invalid X25519 public key"))?,
             };
 
-            let der = spki
+            spki
               .to_der()
               .map_err(|_| type_error("invalid X25519 public key"))?
-              .into_boxed_slice();
-            return Ok(der);
+              .into_boxed_slice()
           }
           AsymmetricPublicKey::Ed25519(key) => {
             let spki = SubjectPublicKeyInfoRef {
@@ -752,11 +752,10 @@ impl AsymmetricPublicKey {
                 .map_err(|_| type_error("invalid Ed25519 public key"))?,
             };
 
-            let der = spki
+            spki
               .to_der()
               .map_err(|_| type_error("invalid Ed25519 public key"))?
-              .into_boxed_slice();
-            return Ok(der);
+              .into_boxed_slice()
           }
           AsymmetricPublicKey::Dh(key) => {
             let spki = SubjectPublicKeyInfoRef {
@@ -767,16 +766,15 @@ impl AsymmetricPublicKey {
               subject_public_key: BitStringRef::from_bytes(key)
                 .map_err(|_| type_error("invalid DH public key"))?,
             };
-            let der = spki
+            spki
               .to_der()
               .map_err(|_| type_error("invalid DH public key"))?
-              .into_boxed_slice();
-            return Ok(der);
+              .into_boxed_slice()
           }
         };
-        Ok(der.into_vec().into_boxed_slice())
+        Ok(der)
       }
-      _ => return Err(type_error(format!("unsupported key type: {}", typ))),
+      _ => Err(type_error(format!("unsupported key type: {}", typ))),
     }
   }
 }
@@ -794,11 +792,9 @@ impl AsymmetricPrivateKey {
             .into_boxed_slice();
           Ok(der)
         }
-        _ => {
-          return Err(type_error(
-            "exporting non-RSA private key as PKCS#1 is not supported",
-          ))
-        }
+        _ => Err(type_error(
+          "exporting non-RSA private key as PKCS#1 is not supported",
+        )),
       },
       "sec1" => match self {
         AsymmetricPrivateKey::Ec(key) => {
@@ -810,11 +806,9 @@ impl AsymmetricPrivateKey {
           .map_err(|_| type_error("invalid EC private key"))?;
           Ok(sec1.to_vec().into_boxed_slice())
         }
-        _ => {
-          return Err(type_error(
-            "exporting non-EC private key as SEC1 is not supported",
-          ))
-        }
+        _ => Err(type_error(
+          "exporting non-EC private key as SEC1 is not supported",
+        )),
       },
       "pkcs8" => {
         let der = match self {
@@ -881,7 +875,7 @@ impl AsymmetricPrivateKey {
                 oid: DH_KEY_AGREEMENT_OID,
                 parameters: None,
               },
-              private_key: &*key,
+              private_key: key,
               public_key: None,
             };
 
@@ -894,7 +888,7 @@ impl AsymmetricPrivateKey {
 
         Ok(der)
       }
-      _ => return Err(type_error(format!("unsupported key type: {}", typ))),
+      _ => Err(type_error(format!("unsupported key type: {}", typ))),
     }
   }
 }
@@ -930,7 +924,7 @@ pub fn op_node_create_public_key(
 pub fn op_node_create_secret_key(
   #[buffer(copy)] key: Box<[u8]>,
 ) -> KeyObjectHandle {
-  KeyObjectHandle::SecretKey(key)
+  KeyObjectHandle::Secret(key)
 }
 
 #[op2]
@@ -939,35 +933,31 @@ pub fn op_node_get_asymmetric_key_type(
   #[cppgc] handle: &KeyObjectHandle,
 ) -> Result<&'static str, AnyError> {
   match handle {
-    KeyObjectHandle::AsymmetricPrivateKey(AsymmetricPrivateKey::Rsa(_))
-    | KeyObjectHandle::AsymmetricPublicKey(AsymmetricPublicKey::Rsa(_)) => {
+    KeyObjectHandle::AsymmetricPrivate(AsymmetricPrivateKey::Rsa(_))
+    | KeyObjectHandle::AsymmetricPublic(AsymmetricPublicKey::Rsa(_)) => {
       Ok("rsa")
     }
-    KeyObjectHandle::AsymmetricPrivateKey(AsymmetricPrivateKey::RsaPss(_))
-    | KeyObjectHandle::AsymmetricPublicKey(AsymmetricPublicKey::RsaPss(_)) => {
+    KeyObjectHandle::AsymmetricPrivate(AsymmetricPrivateKey::RsaPss(_))
+    | KeyObjectHandle::AsymmetricPublic(AsymmetricPublicKey::RsaPss(_)) => {
       Ok("rsa-pss")
     }
-    KeyObjectHandle::AsymmetricPrivateKey(AsymmetricPrivateKey::Dsa(_))
-    | KeyObjectHandle::AsymmetricPublicKey(AsymmetricPublicKey::Dsa(_)) => {
+    KeyObjectHandle::AsymmetricPrivate(AsymmetricPrivateKey::Dsa(_))
+    | KeyObjectHandle::AsymmetricPublic(AsymmetricPublicKey::Dsa(_)) => {
       Ok("dsa")
     }
-    KeyObjectHandle::AsymmetricPrivateKey(AsymmetricPrivateKey::Ec(_))
-    | KeyObjectHandle::AsymmetricPublicKey(AsymmetricPublicKey::Ec(_)) => {
-      Ok("ec")
-    }
-    KeyObjectHandle::AsymmetricPrivateKey(AsymmetricPrivateKey::X25519(_))
-    | KeyObjectHandle::AsymmetricPublicKey(AsymmetricPublicKey::X25519(_)) => {
+    KeyObjectHandle::AsymmetricPrivate(AsymmetricPrivateKey::Ec(_))
+    | KeyObjectHandle::AsymmetricPublic(AsymmetricPublicKey::Ec(_)) => Ok("ec"),
+    KeyObjectHandle::AsymmetricPrivate(AsymmetricPrivateKey::X25519(_))
+    | KeyObjectHandle::AsymmetricPublic(AsymmetricPublicKey::X25519(_)) => {
       Ok("x25519")
     }
-    KeyObjectHandle::AsymmetricPrivateKey(AsymmetricPrivateKey::Ed25519(_))
-    | KeyObjectHandle::AsymmetricPublicKey(AsymmetricPublicKey::Ed25519(_)) => {
+    KeyObjectHandle::AsymmetricPrivate(AsymmetricPrivateKey::Ed25519(_))
+    | KeyObjectHandle::AsymmetricPublic(AsymmetricPublicKey::Ed25519(_)) => {
       Ok("ed25519")
     }
-    KeyObjectHandle::AsymmetricPrivateKey(AsymmetricPrivateKey::Dh(_))
-    | KeyObjectHandle::AsymmetricPublicKey(AsymmetricPublicKey::Dh(_)) => {
-      Ok("dh")
-    }
-    KeyObjectHandle::SecretKey(_) => {
+    KeyObjectHandle::AsymmetricPrivate(AsymmetricPrivateKey::Dh(_))
+    | KeyObjectHandle::AsymmetricPublic(AsymmetricPublicKey::Dh(_)) => Ok("dh"),
+    KeyObjectHandle::Secret(_) => {
       Err(type_error("symmetric key is not an asymmetric key"))
     }
   }
@@ -1008,7 +998,7 @@ pub fn op_node_get_asymmetric_key_details(
   #[cppgc] handle: &KeyObjectHandle,
 ) -> Result<AsymmetricKeyDetails, AnyError> {
   match handle {
-    KeyObjectHandle::AsymmetricPrivateKey(private_key) => match private_key {
+    KeyObjectHandle::AsymmetricPrivate(private_key) => match private_key {
       AsymmetricPrivateKey::Rsa(key) => {
         let modulus_length = key.n().bits();
         let public_exponent =
@@ -1058,7 +1048,7 @@ pub fn op_node_get_asymmetric_key_details(
       AsymmetricPrivateKey::Ed25519(_) => Ok(AsymmetricKeyDetails::Ed25519),
       AsymmetricPrivateKey::Dh(_) => Ok(AsymmetricKeyDetails::Dh),
     },
-    KeyObjectHandle::AsymmetricPublicKey(public_key) => match public_key {
+    KeyObjectHandle::AsymmetricPublic(public_key) => match public_key {
       AsymmetricPublicKey::Rsa(key) => {
         let modulus_length = key.n().bits();
         let public_exponent =
@@ -1108,7 +1098,7 @@ pub fn op_node_get_asymmetric_key_details(
       AsymmetricPublicKey::Ed25519(_) => Ok(AsymmetricKeyDetails::Ed25519),
       AsymmetricPublicKey::Dh(_) => Ok(AsymmetricKeyDetails::Dh),
     },
-    KeyObjectHandle::SecretKey(_) => {
+    KeyObjectHandle::Secret(_) => {
       Err(type_error("symmetric key is not an asymmetric key"))
     }
   }
@@ -1120,13 +1110,13 @@ pub fn op_node_get_symmetric_key_size(
   #[cppgc] handle: &KeyObjectHandle,
 ) -> Result<usize, AnyError> {
   match handle {
-    KeyObjectHandle::AsymmetricPrivateKey(_) => {
+    KeyObjectHandle::AsymmetricPrivate(_) => {
       Err(type_error("asymmetric key is not a symmetric key"))
     }
-    KeyObjectHandle::AsymmetricPublicKey(_) => {
+    KeyObjectHandle::AsymmetricPublic(_) => {
       Err(type_error("asymmetric key is not a symmetric key"))
     }
-    KeyObjectHandle::SecretKey(key) => Ok(key.len() * 8),
+    KeyObjectHandle::Secret(key) => Ok(key.len() * 8),
   }
 }
 
@@ -1135,7 +1125,7 @@ pub fn op_node_get_symmetric_key_size(
 pub fn op_node_generate_secret_key(#[smi] len: usize) -> KeyObjectHandle {
   let mut key = vec![0u8; len];
   thread_rng().fill_bytes(&mut key);
-  KeyObjectHandle::SecretKey(key.into_boxed_slice())
+  KeyObjectHandle::Secret(key.into_boxed_slice())
 }
 
 #[op2(async)]
@@ -1146,7 +1136,7 @@ pub async fn op_node_generate_secret_key_async(
   spawn_blocking(move || {
     let mut key = vec![0u8; len];
     thread_rng().fill_bytes(&mut key);
-    KeyObjectHandle::SecretKey(key.into_boxed_slice())
+    KeyObjectHandle::Secret(key.into_boxed_slice())
   })
   .await
   .unwrap()
@@ -1165,10 +1155,10 @@ impl KeyObjectHandlePair {
     public_key: AsymmetricPublicKey,
   ) -> Self {
     Self {
-      private_key: RefCell::new(Some(KeyObjectHandle::AsymmetricPrivateKey(
+      private_key: RefCell::new(Some(KeyObjectHandle::AsymmetricPrivate(
         private_key,
       ))),
-      public_key: RefCell::new(Some(KeyObjectHandle::AsymmetricPublicKey(
+      public_key: RefCell::new(Some(KeyObjectHandle::AsymmetricPublic(
         public_key,
       ))),
     }
@@ -1324,7 +1314,7 @@ pub async fn op_node_generate_ec_key_async(
 }
 
 fn x25519_generate() -> KeyObjectHandlePair {
-  let keypair = x25519_dalek::StaticSecret::random_from_rng(&mut thread_rng());
+  let keypair = x25519_dalek::StaticSecret::random_from_rng(thread_rng());
   let private_key = AsymmetricPrivateKey::X25519(keypair);
   let public_key = private_key.to_public_key();
   KeyObjectHandlePair::new(private_key, public_key)
@@ -1464,9 +1454,9 @@ pub fn op_node_export_private_key_der(
 #[string]
 pub fn op_node_key_type(#[cppgc] handle: &KeyObjectHandle) -> &'static str {
   match handle {
-    KeyObjectHandle::AsymmetricPrivateKey(_) => "private",
-    KeyObjectHandle::AsymmetricPublicKey(_) => "public",
-    KeyObjectHandle::SecretKey(_) => "secret",
+    KeyObjectHandle::AsymmetricPrivate(_) => "private",
+    KeyObjectHandle::AsymmetricPublic(_) => "public",
+    KeyObjectHandle::Secret(_) => "secret",
   }
 }
 
@@ -1479,7 +1469,7 @@ pub fn op_node_derive_public_key_from_private_key(
     return Err(type_error("expected private key"));
   };
 
-  Ok(KeyObjectHandle::AsymmetricPublicKey(
+  Ok(KeyObjectHandle::AsymmetricPublic(
     private_key.to_public_key(),
   ))
 }

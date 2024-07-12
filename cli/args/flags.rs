@@ -3380,8 +3380,8 @@ fn import_map_arg() -> Arg {
 }
 
 fn env_file_arg() -> Arg {
-  Arg::new("env")
-    .long("env")
+  Arg::new("env-file")
+    .long("env-file")
     .value_name("FILE")
     .help("Load .env file")
     .long_help("UNSTABLE: Load environment variables from local file. Only the first environment variable with a given key is used. Existing process environment variables are not overwritten.")
@@ -4762,7 +4762,7 @@ fn import_map_arg_parse(flags: &mut Flags, matches: &mut ArgMatches) {
 }
 
 fn env_file_arg_parse(flags: &mut Flags, matches: &mut ArgMatches) {
-  flags.env_file = matches.remove_one::<String>("env");
+  flags.env_file = matches.remove_one::<String>("env-file");
 }
 
 fn reload_arg_parse(flags: &mut Flags, matches: &mut ArgMatches) {

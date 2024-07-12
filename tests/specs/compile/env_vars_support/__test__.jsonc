@@ -3,12 +3,12 @@
   "steps": [
     {
       "args": "compile -A --output out --env-file=environment.env main.ts",
-      "output": "compile.out",
+      "output": "compile.out"
     },
     {
       "commandName": "./out",
       "args": [],
-      "output": "main.out",
-    },
-  ],
+      "output": "main.out"
+    }
+  ]
 }

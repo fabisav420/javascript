@@ -1,4 +1,4 @@
 {
   "args": "run --env-file=../../../testdata/env_unparsable --allow-env main.js",
-  "output": "main.out",
+  "output": "main.out"
 }

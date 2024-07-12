@@ -1097,7 +1097,7 @@ fn env_file() {
     .new_command()
     .args_vec([
       "repl",
-      "--env=env",
+      "--env-file=env",
       "--allow-env",
       "--eval",
       "console.log(Deno.env.get('FOO'))",

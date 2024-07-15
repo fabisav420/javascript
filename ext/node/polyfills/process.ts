@@ -588,6 +588,7 @@ Object.defineProperty(Process.prototype, "ppid", {
 
 /** https://nodejs.org/api/process.html#process_process_platform */
 Object.defineProperty(Process.prototype, "platform", {
+  configurable: true,
   get() {
     return platform;
   },

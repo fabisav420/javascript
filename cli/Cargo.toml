@@ -154,6 +154,7 @@ uuid = { workspace = true, features = ["serde"] }
 which.workspace = true
 zeromq.workspace = true
 zstd.workspace = true
+csv = "1.3.0"
 
 [target.'cfg(windows)'.dependencies]
 junction.workspace = true

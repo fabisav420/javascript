@@ -3,10 +3,7 @@
 // TODO(petamoriken): enable prefer-primordials for node polyfills
 // deno-lint-ignore-file prefer-primordials
 
-import {
-  op_node_generate_secret,
-  op_node_generate_secret_async,
-} from "ext:core/ops";
+import { op_node_fill_random, op_node_fill_random_async } from "ext:core/ops";
 
 import {
   MAX_SIZE as kMaxUint32,
@@ -55,7 +52,7 @@ export default function randomFill(
   assertOffset(offset, buf.length);
   assertSize(size, offset, buf.length);
 
-  op_node_generate_secret_async(Math.floor(size))
+  op_node_fill_random_async(Math.floor(size))
     .then(
       (randomData) => {
         const randomBuf = Buffer.from(randomData.buffer);
@@ -87,7 +84,7 @@ export function randomFillSync(buf, offset = 0, size) {
   }
 
   const bytes = new Uint8Array(buf.buffer ? buf.buffer : buf, offset, size);
-  op_node_generate_secret(bytes);
+  op_node_fill_random(bytes);
 
   return buf;
 }

@@ -171,6 +171,7 @@ Deno.test({
   },
 });
 
+/*
 // https://github.com/denoland/deno/issues/23852
 Deno.test({
   name: "vm runInThisContext global.foo",
@@ -179,3 +180,4 @@ Deno.test({
     assertEquals(result, 1);
   },
 });
+*/

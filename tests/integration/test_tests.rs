@@ -87,7 +87,7 @@ fn fail_with_contain_unicode_filename() {
 running 1 test from ./fail_with_contain_unicode_filename🦕.ts
 test 0 ... FAILED ([WILDCARD])
 
- ERRORS 
+ ERRORS\u{0020}
 
 test 0 => ./fail_with_contain_unicode_filename🦕.ts:[WILDCARD]
 error: Error
@@ -95,7 +95,7 @@ error: Error
         ^
     at [WILDCARD]/fail_with_contain_unicode_filename🦕.ts:[WILDCARD]
 
- FAILURES 
+ FAILURES\u{0020}
 
 test 0 => ./fail_with_contain_unicode_filename🦕.ts:[WILDCARD]
 

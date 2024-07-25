@@ -1,11 +1,14 @@
 // Copyright 2018-2024 the Deno authors. All rights reserved. MIT license.
 
+#[cfg(windows)]
 use std::io::Read;
 
-use pretty_assertions::assert_eq;
+#[cfg(windows)]
 use regex::Regex;
+#[cfg(windows)]
 use test_util as util;
 
+#[cfg(windows)]
 #[tokio::test]
 async fn deno_serve_port_0() {
   let mut child = util::deno_cmd()
@@ -49,6 +52,7 @@ async fn deno_serve_port_0() {
   child.wait().unwrap();
 }
 
+#[cfg(windows)]
 #[tokio::test]
 async fn deno_serve_no_args() {
   let mut child = util::deno_cmd()

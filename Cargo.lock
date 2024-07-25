@@ -1717,6 +1717,7 @@ dependencies = [
  "deno_permissions",
  "deno_tls",
  "pin-project",
+ "quinn",
  "rustls-tokio-stream",
  "serde",
  "socket2",

@@ -80,11 +80,11 @@ itest!(check_local_by_default2 {
 });
 
 itest!(env_file {
-  args: "eval --env=env console.log(Deno.env.get(\"ANOTHER_FOO\"))",
+  args: "eval --env-file=env console.log(Deno.env.get(\"ANOTHER_FOO\"))",
   output_str: Some("ANOTHER_BAR\n"),
 });
 
 itest!(env_file_missing {
-  args: "eval --env=missing console.log(Deno.env.get(\"ANOTHER_FOO\"))",
+  args: "eval --env-file=missing console.log(Deno.env.get(\"ANOTHER_FOO\"))",
   output: "eval/env_file_missing.out",
 });
